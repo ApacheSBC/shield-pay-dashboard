@@ -258,8 +258,8 @@ authRouter.post(
         )
         .run(row.id, tokenHash, expiresAt)
 
-      // In production, this token must be sent via email provider; do not log raw token values.
-      console.log(`[ShieldPay] Password reset token generated for ${email} (token_length=${resetToken.length})`)
+      // In production, this token must be sent via email provider; do not log PII or raw token values.
+      console.log('[ShieldPay] Password reset token generated (token_length=%d)', resetToken.length)
     }
 
     res.json({

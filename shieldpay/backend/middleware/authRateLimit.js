@@ -2,6 +2,7 @@ import { rateLimit } from 'express-rate-limit'
 import slowDown from 'express-slow-down'
 import { RedisStore } from 'rate-limit-redis'
 import { createClient } from 'redis'
+import { sanitizeErrorForLog } from '../utils/logSanitizer.js'
 
 const AUTH_WINDOW_MS = 10 * 60 * 1000
 const AUTH_LIMIT_DEFAULT = 20
@@ -20,7 +21,7 @@ async function initRedisStore() {
   try {
     const client = createClient({ url: redisUrl })
     client.on('error', (err) => {
-      console.error('[ShieldPay] Redis client error for rate limit store:', err.message)
+      console.error('[ShieldPay] Redis client error for rate limit store:', sanitizeErrorForLog(err))
     })
     await client.connect()
     sharedStore = new RedisStore({
@@ -30,7 +31,7 @@ async function initRedisStore() {
     console.log('[ShieldPay] Auth rate limiter using Redis store')
   } catch (err) {
     console.error('[ShieldPay] Redis unavailable for rate limit store, using in-memory fallback')
-    console.error(err?.message || err)
+    console.error(sanitizeErrorForLog(err))
     sharedStore = undefined
   }
   return sharedStore

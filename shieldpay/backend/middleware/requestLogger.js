@@ -1,5 +1,7 @@
+import { sanitizeText } from '../utils/logSanitizer.js'
+
 const SENSITIVE_KEY_RE =
-  /(password|newPassword|adminPassword|token|authorization|jwt|secret|api[_-]?key|cvv|pan|card(number)?)/i
+  /(password|newPassword|adminPassword|token|authorization|jwt|secret|api[_-]?key|cvv|pan|card(number)?|email|phone)/i
 
 function redactValue(value) {
   if (value == null) return value
@@ -26,7 +28,7 @@ function redactObject(input) {
 export function requestBodyLogger(req, res, next) {
   if (req.path.startsWith('/api') && req.method !== 'GET' && req.body && Object.keys(req.body).length) {
     const redacted = redactObject(req.body)
-    console.log('[ShieldPay dev log]', req.method, req.path, JSON.stringify(redacted))
+    console.log('[ShieldPay dev log]', req.method, req.path, sanitizeText(JSON.stringify(redacted)))
   }
   next()
 }

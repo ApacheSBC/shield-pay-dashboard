@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 import { initDb } from './backend/db.js'
 import { apiRouter } from './backend/routes/index.js'
 import { requestBodyLogger } from './backend/middleware/requestLogger.js'
+import { sanitizeClientErrorMessage, sanitizeErrorForLog } from './backend/utils/logSanitizer.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT) || 8788
@@ -30,7 +31,7 @@ try {
   await initDb()
 } catch (err) {
   console.error('[ShieldPay] Database init failed (is better-sqlite3 built for your Node version?)')
-  console.error(err)
+  console.error(sanitizeErrorForLog(err))
   process.exit(1)
 }
 
@@ -88,9 +89,10 @@ if (isProd) {
 }
 
 app.use((err, req, res, next) => {
-  console.error(err)
+  console.error('[ShieldPay API error]', sanitizeErrorForLog(err))
   const status = Number.isInteger(err?.status) ? err.status : 500
-  const message = status >= 500 ? 'Internal server error' : err?.message || 'Request failed'
+  const message =
+    status >= 500 ? 'Internal server error' : sanitizeClientErrorMessage(err?.message, 'Request failed')
   res.status(status).json({ error: message })
 })
 
@@ -100,7 +102,7 @@ server.on('error', (err) => {
       `[ShieldPay] Port ${PORT} is already in use. Set a free port in .env, e.g. PORT=8792, then run again.`,
     )
   } else {
-    console.error(err)
+    console.error(sanitizeErrorForLog(err))
   }
   process.exit(1)
 })
