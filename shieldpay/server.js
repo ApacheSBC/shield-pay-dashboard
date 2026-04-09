@@ -19,6 +19,7 @@ const isProd = process.env.NODE_ENV === 'production'
 const MIN_SESSION_SECRET_LEN = 24
 const sessionSecret = (process.env.SESSION_SECRET || '').trim()
 const redisSessionUrl = String(process.env.REDIS_SESSION_URL || '').trim()
+const enableRequestBodyLogs = String(process.env.ENABLE_REQUEST_BODY_LOGS || '').trim().toLowerCase() === 'true'
 const DEFAULT_ALLOWED_ORIGINS = [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]
 const corsAllowedOrigins = new Set(
   String(process.env.CORS_ALLOWED_ORIGINS || '')
@@ -172,8 +173,8 @@ app.use(
 app.use('/api/webhooks/incoming', express.raw({ type: 'application/json', limit: '256kb' }))
 app.use(express.json())
 
-// ARKO-LAB-05: log full request bodies (passwords, card fields) in development — unsafe pattern.
-if (!isProd) {
+// Optional dev-only request logging. Logger applies field redaction and text sanitization.
+if (!isProd && enableRequestBodyLogs) {
   app.use(requestBodyLogger)
 }
 
