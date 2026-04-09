@@ -4,8 +4,13 @@ import { requireAuth } from '../middleware/requireAuth.js'
 
 export const adminRouter = Router()
 
-// ARKO-LAB-03: only checks that some JWT exists — missing role === 'admin' gate on these JSON endpoints.
 adminRouter.use(requireAuth)
+adminRouter.use((req, res, next) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin only' })
+  }
+  next()
+})
 
 adminRouter.get('/merchants', (req, res, next) => {
   try {
