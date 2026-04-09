@@ -135,9 +135,11 @@ cardsRouter.put('/:id', validateRequest({ params: zIdParam, body: cardUpdateBody
     if (!existing) return res.status(404).json({ error: 'Not found' })
     getDb()
       .prepare(
-        `UPDATE cards SET label = COALESCE(?, label), exp_month = COALESCE(?, exp_month), exp_year = COALESCE(?, exp_year) WHERE id = ?`,
+        `UPDATE cards
+         SET label = COALESCE(?, label), exp_month = COALESCE(?, exp_month), exp_year = COALESCE(?, exp_year)
+         WHERE id = ? AND merchant_id = ?`,
       )
-      .run(label ?? existing.label, expMonth ?? existing.exp_month, expYear ?? existing.exp_year, req.params.id)
+      .run(label ?? existing.label, expMonth ?? existing.exp_month, expYear ?? existing.exp_year, req.params.id, req.user.id)
     const row = getDb()
       .prepare('SELECT * FROM cards WHERE id = ? AND merchant_id = ?')
       .get(req.params.id, req.user.id)

@@ -118,9 +118,18 @@ customersRouter.put(
     if (!existing) return res.status(404).json({ error: 'Not found' })
     getDb()
       .prepare(
-        `UPDATE customers SET name = COALESCE(?, name), email = COALESCE(?, email), phone = COALESCE(?, phone), notes = COALESCE(?, notes) WHERE id = ?`,
+        `UPDATE customers
+         SET name = COALESCE(?, name), email = COALESCE(?, email), phone = COALESCE(?, phone), notes = COALESCE(?, notes)
+         WHERE id = ? AND merchant_id = ?`,
       )
-      .run(name ?? existing.name, email ?? existing.email, phone ?? existing.phone, notes ?? existing.notes, req.params.id)
+      .run(
+        name ?? existing.name,
+        email ?? existing.email,
+        phone ?? existing.phone,
+        notes ?? existing.notes,
+        req.params.id,
+        req.user.id,
+      )
     const row = getDb()
       .prepare('SELECT * FROM customers WHERE id = ? AND merchant_id = ?')
       .get(req.params.id, req.user.id)
