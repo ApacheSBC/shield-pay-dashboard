@@ -148,7 +148,7 @@ authRouter.post('/register', ...authProtection.register, validateRequest({ body:
     const password_hash = await bcrypt.hash(password, 10)
     const result = getDb()
       .prepare(
-        `INSERT INTO users (email, password_hash, role, merchant_name) VALUES (?, ?, 'merchant', ?)`,
+        `INSERT INTO users (email, password_hash, role, merchant_name, session_version) VALUES (?, ?, 'merchant', ?, 0)`,
       )
       .run(email, password_hash, merchantName || 'My business')
 
@@ -157,12 +157,14 @@ authRouter.post('/register', ...authProtection.register, validateRequest({ body:
       email,
       role: 'merchant',
       merchantName: merchantName || 'My business',
+      sv: 0,
     })
     req.session.user = {
       id: result.lastInsertRowid,
       email,
       role: 'merchant',
       merchantName: merchantName || 'My business',
+      sessionVersion: 0,
     }
 
     res.status(201).json({
@@ -187,7 +189,7 @@ authRouter.post('/login', ...authProtection.login, validateRequest({ body: login
       return res.status(400).json({ error: 'email and password required' })
     }
     const row = getDb()
-      .prepare('SELECT id, email, password_hash, role, merchant_name FROM users WHERE email = ?')
+      .prepare('SELECT id, email, password_hash, role, merchant_name, session_version FROM users WHERE email = ?')
       .get(email)
     if (!row || !(await bcrypt.compare(password, row.password_hash))) {
       return res.status(401).json({ error: 'Invalid credentials' })
@@ -197,12 +199,14 @@ authRouter.post('/login', ...authProtection.login, validateRequest({ body: login
       email: row.email,
       role: row.role,
       merchantName: row.merchant_name,
+      sv: row.session_version ?? 0,
     })
     req.session.user = {
       id: row.id,
       email: row.email,
       role: row.role,
       merchantName: row.merchant_name,
+      sessionVersion: row.session_version ?? 0,
     }
     res.json({
       token,
@@ -299,12 +303,16 @@ authRouter.post(
     }
 
     const password_hash = await bcrypt.hash(newPassword, 10)
-    getDb().prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(password_hash, resetRow.user_id)
+    getDb()
+      .prepare('UPDATE users SET password_hash = ?, session_version = session_version + 1 WHERE id = ?')
+      .run(password_hash, resetRow.user_id)
     getDb()
       .prepare('UPDATE password_reset_tokens SET used_at = datetime(\'now\') WHERE id = ?')
       .run(resetRow.id)
     getDb().prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(resetRow.user_id)
 
+    // In production this should trigger a user email notification via your mail provider.
+    console.log('[ShieldPay] Password changed for user_id=%d; existing sessions invalidated', resetRow.user_id)
     res.json({ message: 'Password updated' })
   } catch (e) {
     next(e)
@@ -412,7 +420,7 @@ authRouter.post(
     }
 
     const target = getDb()
-      .prepare('SELECT id, email, role, merchant_name FROM users WHERE email = ?')
+      .prepare('SELECT id, email, role, merchant_name, session_version FROM users WHERE email = ?')
       .get(targetEmailNorm)
     if (!target) {
       logImpersonationEvent({
@@ -431,6 +439,7 @@ authRouter.post(
       email: target.email,
       role: target.role,
       merchantName: target.merchant_name,
+      sv: target.session_version ?? 0,
     })
     logImpersonationEvent({
       adminUserId: adminRow.id,
