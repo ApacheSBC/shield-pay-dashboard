@@ -209,3 +209,23 @@ test('impersonation endpoint enforces step-up controls and audit logging', () =>
   assert.match(authFile, /reason:\s*'rate_limited'/)
   assert.match(authFile, /reason:\s*'success'/)
 })
+
+test('password reset flow requires reset token and avoids legacy unauthenticated email reset', () => {
+  const authFile = read('backend/routes/auth.js')
+
+  // Modern flow: request-reset endpoint plus token-based reset endpoint.
+  assert.match(authFile, /authRouter\.post\(\s*'\/request-password-reset'/)
+  assert.match(authFile, /authRouter\.post\(\s*'\/reset-password'/)
+  assert.match(authFile, /token:\s*z\.string\(\)\.min\(1\)\.max\(512\)/)
+  assert.match(authFile, /newPassword:\s*z\.string\(\)\.min\(MIN_PASSWORD_LEN\)/)
+  assert.match(authFile, /hashResetToken\(token\)/)
+  assert.match(authFile, /FROM password_reset_tokens/)
+  assert.match(authFile, /Invalid or expired reset token/)
+
+  // Guard against regression to insecure direct reset by email.
+  const resetSection = authFile.match(/authRouter\.post\(\s*'\/reset-password'[\s\S]*?\n\)\n\nauthRouter\.post\(\s*'\/impersonate'/)
+  assert.ok(resetSection, 'reset-password section should be present')
+  const text = resetSection[0]
+  assert.doesNotMatch(text, /email\s*[,}]/)
+  assert.doesNotMatch(text, /signToken\(/)
+})
