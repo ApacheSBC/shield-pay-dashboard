@@ -199,8 +199,19 @@ async function seedIfNeeded() {
   const count = getDb().prepare('SELECT COUNT(*) AS c FROM users').get().c
   if (count > 0) return
 
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@shieldpay.lab'
-  const adminPassword = process.env.ADMIN_PASSWORD || 'ChangeMeAdmin123!'
+  const adminEmail = (process.env.ADMIN_EMAIL || '').trim().toLowerCase()
+  const adminPassword = process.env.ADMIN_PASSWORD || ''
+  if (!adminEmail || !adminPassword) {
+    throw new Error(
+      'Initial seed requires ADMIN_EMAIL and ADMIN_PASSWORD in environment (no hardcoded admin defaults).',
+    )
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
+    throw new Error('ADMIN_EMAIL must be a valid email address.')
+  }
+  if (adminPassword.length < 12) {
+    throw new Error('ADMIN_PASSWORD must be at least 12 characters for initial seed.')
+  }
   const adminHash = await bcrypt.hash(adminPassword, 10)
 
   getDb()
