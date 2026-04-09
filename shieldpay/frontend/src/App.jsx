@@ -15,7 +15,8 @@ import Admin from './pages/Admin.jsx'
 import Settings from './pages/Settings.jsx'
 
 function PrivateRoute({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, ready } = useAuth()
+  if (!ready) return <p style={{ color: 'var(--muted)', padding: '2rem' }}>Loading…</p>
   if (!isAuthenticated) return <Navigate to="/login" replace />
   return children
 }

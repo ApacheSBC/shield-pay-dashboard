@@ -132,6 +132,12 @@ authRouter.post('/register', async (req, res, next) => {
       role: 'merchant',
       merchantName: merchantName || 'My business',
     })
+    req.session.user = {
+      id: result.lastInsertRowid,
+      email,
+      role: 'merchant',
+      merchantName: merchantName || 'My business',
+    }
 
     res.status(201).json({
       token,
@@ -166,6 +172,12 @@ authRouter.post('/login', async (req, res, next) => {
       role: row.role,
       merchantName: row.merchant_name,
     })
+    req.session.user = {
+      id: row.id,
+      email: row.email,
+      role: row.role,
+      merchantName: row.merchant_name,
+    }
     res.json({
       token,
       user: {
@@ -182,6 +194,12 @@ authRouter.post('/login', async (req, res, next) => {
 
 authRouter.get('/me', requireAuth, (req, res) => {
   res.json({ user: req.user })
+})
+
+authRouter.post('/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ ok: true })
+  })
 })
 
 // Request a password reset; response is always generic to avoid account enumeration.

@@ -41,7 +41,12 @@ app.use(
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, maxAge: 86400000 },
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: isProd,
+      maxAge: 86400000,
+    },
   }),
 )
 

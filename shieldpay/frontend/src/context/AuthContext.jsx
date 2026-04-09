@@ -1,70 +1,59 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import client, { setAuthToken } from '../api/client.js'
+import client from '../api/client.js'
 
 const AuthContext = createContext(null)
 
-const STORAGE_KEY = 'shieldpay_token'
-const USER_KEY = 'shieldpay_user'
-
 export function AuthProvider({ children }) {
-  const [token, setTokenState] = useState(() => localStorage.getItem(STORAGE_KEY))
-  const [user, setUser] = useState(() => {
-    try {
-      const raw = localStorage.getItem(USER_KEY)
-      return raw ? JSON.parse(raw) : null
-    } catch {
-      return null
-    }
-  })
-
-  useEffect(() => {
-    setAuthToken(token)
-  }, [token])
+  const [user, setUser] = useState(null)
+  const [ready, setReady] = useState(false)
 
   const login = async (email, password) => {
     const { data } = await client.post('/auth/login', { email, password })
-    localStorage.setItem(STORAGE_KEY, data.token)
-    localStorage.setItem(USER_KEY, JSON.stringify(data.user))
-    setTokenState(data.token)
     setUser(data.user)
     return data.user
   }
 
   const register = async (payload) => {
     const { data } = await client.post('/auth/register', payload)
-    localStorage.setItem(STORAGE_KEY, data.token)
-    localStorage.setItem(USER_KEY, JSON.stringify(data.user))
-    setTokenState(data.token)
     setUser(data.user)
     return data.user
   }
 
-  const logout = () => {
-    localStorage.removeItem(STORAGE_KEY)
-    localStorage.removeItem(USER_KEY)
-    setTokenState(null)
+  const logout = async () => {
+    try {
+      await client.post('/auth/logout')
+    } catch {
+      // ignore logout network errors; clear local state regardless
+    }
     setUser(null)
-    setAuthToken(null)
   }
 
   const refreshMe = async () => {
-    if (!token) return
-    const { data } = await client.get('/auth/me')
-    localStorage.setItem(USER_KEY, JSON.stringify(data.user))
-    setUser(data.user)
+    try {
+      const { data } = await client.get('/auth/me')
+      setUser(data.user)
+    } catch {
+      setUser(null)
+    } finally {
+      setReady(true)
+    }
   }
+
+  useEffect(() => {
+    refreshMe()
+  }, [])
 
   const value = useMemo(
     () => ({
-      token,
       user,
+      ready,
       login,
       register,
       logout,
       refreshMe,
-      isAuthenticated: Boolean(token),
+      isAuthenticated: Boolean(user),
     }),
-    [token, user],
+    [user, ready],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
