@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
+import crypto from 'crypto'
 import { getDb } from '../db.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { cardRowToApiMasked, transactionRowToApiMasked } from '../crypto/cardFieldCrypto.js'
@@ -59,7 +60,8 @@ settingsRouter.post('/api-keys', async (req, res, next) => {
       return res.status(403).json({ error: 'Merchants only' })
     }
     const { label } = req.body
-    const raw = `sk_${req.user.id}_${Math.random().toString(36).slice(2)}`
+    const randomPart = crypto.randomBytes(24).toString('base64url')
+    const raw = `sk_${req.user.id}_${randomPart}`
     const key_hash = await bcrypt.hash(raw, 8)
     const r = getDb()
       .prepare(
