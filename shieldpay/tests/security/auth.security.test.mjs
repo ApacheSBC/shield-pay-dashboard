@@ -187,3 +187,25 @@ test('payment processing validates optional customer ownership for merchant', ()
   assert.match(paymentsFile, /SELECT id FROM customers WHERE id = \? AND merchant_id = \?/)
   assert.match(paymentsFile, /Invalid customer/)
 })
+
+test('impersonation endpoint enforces step-up controls and audit logging', () => {
+  const authFile = read('backend/routes/auth.js')
+
+  // Endpoint must require auth and dedicated impersonation rate limiting.
+  assert.match(authFile, /authRouter\.post\(\s*'\/impersonate'/)
+  assert.match(authFile, /requireAuth/)
+  assert.match(authFile, /\.\.\.authProtection\.impersonate/)
+  assert.match(authFile, /consumeImpersonationQuota/)
+
+  // Step-up verification: admin email verification + admin password + MFA code.
+  assert.match(authFile, /adminEmail/)
+  assert.match(authFile, /adminEmailNorm !== normalizeEmail\(adminRow\.email\)/)
+  assert.match(authFile, /bcrypt\.compareSync\(adminPassword,\s*adminRow\.password_hash\)/)
+  assert.match(authFile, /isValidMfaCode\(mfaSecret,\s*mfaCode\)/)
+
+  // Comprehensive audit logging on impersonation flow.
+  assert.match(authFile, /function logImpersonationEvent\(/)
+  assert.match(authFile, /INSERT INTO impersonation_audit_logs/)
+  assert.match(authFile, /reason:\s*'rate_limited'/)
+  assert.match(authFile, /reason:\s*'success'/)
+})
