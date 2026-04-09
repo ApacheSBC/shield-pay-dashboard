@@ -46,3 +46,18 @@ test('admin routes enforce server-side RBAC for all /api/admin endpoints', () =>
   assert.match(adminFile, /req\.user\?\.role\s*!==\s*'admin'/)
   assert.match(adminFile, /res\.status\(403\)\.json\(\{\s*error:\s*'Admin only'\s*\}\)/)
 })
+
+test('request logger redacts and sanitizes request bodies before logging', () => {
+  const requestLoggerFile = read('backend/middleware/requestLogger.js')
+
+  // Ensure a sensitive-field regex exists and includes core secrets.
+  assert.match(requestLoggerFile, /SENSITIVE_KEY_RE/)
+  assert.match(requestLoggerFile, /(password|token|authorization|cvv|pan|card)/i)
+
+  // Ensure logs are based on a redacted object, not raw req.body.
+  assert.match(requestLoggerFile, /const redacted = redactObject\(req\.body\)/)
+  assert.doesNotMatch(requestLoggerFile, /console\.log\([^)]*req\.body[^)]*\)/)
+
+  // Ensure output is passed through centralized sanitizer before console output.
+  assert.match(requestLoggerFile, /sanitizeText\(JSON\.stringify\(redacted\)\)/)
+})
