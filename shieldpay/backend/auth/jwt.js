@@ -1,23 +1,40 @@
 import jwt from 'jsonwebtoken'
 
-const MIN_JWT_SECRET_LEN = 32
-const rawJwtSecret = (process.env.JWT_SECRET || '').trim()
+const ACCESS_TOKEN_TTL = '15m'
+const JWT_ISSUER = (process.env.JWT_ISSUER || 'shieldpay-api').trim()
+const JWT_AUDIENCE = (process.env.JWT_AUDIENCE || 'shieldpay-client').trim()
 
-if (!rawJwtSecret) {
+function normalizePem(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\\n/g, '\n')
+}
+
+const privateKeyPem = normalizePem(process.env.JWT_PRIVATE_KEY)
+const publicKeyPem = normalizePem(process.env.JWT_PUBLIC_KEY)
+
+if (!privateKeyPem || !publicKeyPem) {
   throw new Error(
-    'JWT_SECRET is required. Set a strong random value in .env (example: openssl rand -base64 48).',
+    'JWT_PRIVATE_KEY and JWT_PUBLIC_KEY are required (PEM format) for RS256 token signing/verification.',
   )
 }
-if (rawJwtSecret.length < MIN_JWT_SECRET_LEN) {
-  throw new Error(`JWT_SECRET must be at least ${MIN_JWT_SECRET_LEN} characters long.`)
+if (!JWT_ISSUER || !JWT_AUDIENCE) {
+  throw new Error('JWT_ISSUER and JWT_AUDIENCE must be non-empty.')
 }
 
-export const JWT_SECRET = rawJwtSecret
-
-export function signToken(payload, expiresIn = '8h') {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn })
+export function signToken(payload, expiresIn = ACCESS_TOKEN_TTL) {
+  return jwt.sign(payload, privateKeyPem, {
+    algorithm: 'RS256',
+    expiresIn,
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+  })
 }
 
 export function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET)
+  return jwt.verify(token, publicKeyPem, {
+    algorithms: ['RS256'],
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+  })
 }

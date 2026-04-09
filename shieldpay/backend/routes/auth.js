@@ -15,6 +15,8 @@ const MIN_PASSWORD_LEN = 12
 const IMPERSONATE_WINDOW_MS = 10 * 60 * 1000
 const IMPERSONATE_MAX_ATTEMPTS = 5
 const MFA_TIME_STEP_SECONDS = 30
+const REFRESH_TOKEN_TTL_DAYS = 14
+const REFRESH_COOKIE_NAME = 'shieldpay_rt'
 const impersonateBuckets = new Map()
 const registerBodySchema = z.object({
   email: z.string().email(),
@@ -38,6 +40,7 @@ const impersonateBodySchema = z.object({
   adminPassword: z.string().min(1),
   mfaCode: z.string().regex(/^\d{6}$/),
 })
+const refreshBodySchema = z.object({})
 
 function normalizeEmail(email) {
   return String(email || '')
@@ -55,6 +58,64 @@ function isStrongPassword(password) {
 
 function hashResetToken(token) {
   return crypto.createHash('sha256').update(String(token), 'utf8').digest('hex')
+}
+
+function hashRefreshToken(token) {
+  return crypto.createHash('sha256').update(String(token), 'utf8').digest('hex')
+}
+
+function parseCookieValue(req, key) {
+  const raw = String(req.headers.cookie || '')
+  if (!raw) return null
+  const parts = raw.split(';')
+  for (const p of parts) {
+    const idx = p.indexOf('=')
+    if (idx <= 0) continue
+    const k = p.slice(0, idx).trim()
+    if (k !== key) continue
+    return decodeURIComponent(p.slice(idx + 1).trim())
+  }
+  return null
+}
+
+function clearRefreshCookie(res) {
+  res.cookie(REFRESH_COOKIE_NAME, '', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/api/auth',
+    maxAge: 0,
+  })
+}
+
+function setRefreshCookie(res, token) {
+  res.cookie(REFRESH_COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/api/auth',
+    maxAge: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
+  })
+}
+
+function issueRefreshToken({ userId, sessionVersion, res }) {
+  const refreshToken = crypto.randomBytes(48).toString('base64url')
+  const tokenHash = hashRefreshToken(refreshToken)
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  getDb()
+    .prepare(
+      `INSERT INTO refresh_tokens (user_id, token_hash, session_version, expires_at)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(userId, tokenHash, sessionVersion, expiresAt)
+  setRefreshCookie(res, refreshToken)
+}
+
+function revokeRefreshTokenByHash(tokenHash) {
+  if (!tokenHash) return
+  getDb()
+    .prepare(`UPDATE refresh_tokens SET revoked_at = datetime('now') WHERE token_hash = ? AND revoked_at IS NULL`)
+    .run(tokenHash)
 }
 
 function getClientIp(req) {
@@ -166,6 +227,7 @@ authRouter.post('/register', ...authProtection.register, validateRequest({ body:
       merchantName: merchantName || 'My business',
       sessionVersion: 0,
     }
+    issueRefreshToken({ userId: result.lastInsertRowid, sessionVersion: 0, res })
 
     res.status(201).json({
       token,
@@ -208,6 +270,7 @@ authRouter.post('/login', ...authProtection.login, validateRequest({ body: login
       merchantName: row.merchant_name,
       sessionVersion: row.session_version ?? 0,
     }
+    issueRefreshToken({ userId: row.id, sessionVersion: row.session_version ?? 0, res })
     res.json({
       token,
       user: {
@@ -227,9 +290,67 @@ authRouter.get('/me', requireAuth, (req, res) => {
 })
 
 authRouter.post('/logout', (req, res) => {
+  const refreshToken = parseCookieValue(req, REFRESH_COOKIE_NAME)
+  if (refreshToken) revokeRefreshTokenByHash(hashRefreshToken(refreshToken))
+  clearRefreshCookie(res)
   req.session.destroy(() => {
     res.json({ ok: true })
   })
+})
+
+authRouter.post('/refresh', ...authProtection.login, validateRequest({ body: refreshBodySchema }), (req, res, next) => {
+  try {
+    const refreshToken = parseCookieValue(req, REFRESH_COOKIE_NAME)
+    if (!refreshToken) return res.status(401).json({ error: 'Missing refresh token' })
+
+    const tokenHash = hashRefreshToken(refreshToken)
+    const row = getDb()
+      .prepare(
+        `SELECT rt.id, rt.user_id, rt.session_version, rt.expires_at, rt.revoked_at,
+                u.email, u.role, u.merchant_name, u.session_version AS current_session_version
+         FROM refresh_tokens rt
+         JOIN users u ON u.id = rt.user_id
+         WHERE rt.token_hash = ?`,
+      )
+      .get(tokenHash)
+    if (!row || row.revoked_at || new Date(row.expires_at).getTime() < Date.now()) {
+      clearRefreshCookie(res)
+      return res.status(401).json({ error: 'Invalid refresh token' })
+    }
+    if (Number(row.session_version) !== Number(row.current_session_version)) {
+      revokeRefreshTokenByHash(tokenHash)
+      clearRefreshCookie(res)
+      return res.status(401).json({ error: 'Invalid refresh token' })
+    }
+
+    // Rotate refresh token (single-use refresh token semantics).
+    revokeRefreshTokenByHash(tokenHash)
+    issueRefreshToken({
+      userId: row.user_id,
+      sessionVersion: Number(row.current_session_version),
+      res,
+    })
+
+    const token = signToken({
+      sub: row.user_id,
+      email: row.email,
+      role: row.role,
+      merchantName: row.merchant_name,
+      sv: Number(row.current_session_version),
+    })
+
+    res.json({
+      token,
+      user: {
+        id: row.user_id,
+        email: row.email,
+        role: row.role,
+        merchantName: row.merchant_name,
+      },
+    })
+  } catch (e) {
+    next(e)
+  }
 })
 
 // Request a password reset; response is always generic to avoid account enumeration.
@@ -306,6 +427,9 @@ authRouter.post(
     getDb()
       .prepare('UPDATE users SET password_hash = ?, session_version = session_version + 1 WHERE id = ?')
       .run(password_hash, resetRow.user_id)
+    getDb()
+      .prepare('UPDATE refresh_tokens SET revoked_at = datetime(\'now\') WHERE user_id = ? AND revoked_at IS NULL')
+      .run(resetRow.user_id)
     getDb()
       .prepare('UPDATE password_reset_tokens SET used_at = datetime(\'now\') WHERE id = ?')
       .run(resetRow.id)
