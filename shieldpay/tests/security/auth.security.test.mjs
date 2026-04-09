@@ -105,3 +105,18 @@ test('frontend auth avoids localStorage token persistence and uses cookies', () 
   assert.match(apiClientFile, /withCredentials:\s*true/)
   assert.doesNotMatch(apiClientFile, /Authorization/)
 })
+
+test('global API error handler returns generic messages only', () => {
+  const serverFile = read('server.js')
+
+  // Server logs sanitized details internally.
+  assert.match(serverFile, /console\.error\('\[ShieldPay API error\]', sanitizeErrorForLog\(err\)\)/)
+
+  // Response should use generic mapped messages and never expose stack/body.
+  assert.match(serverFile, /const messageByStatus = \{/)
+  assert.match(serverFile, /status >= 500 \? 'Internal server error' : messageByStatus\[status\] \|\| 'Request failed'/)
+  assert.match(serverFile, /res\.status\(status\)\.json\(\{ error: message \}\)/)
+  assert.doesNotMatch(serverFile, /res\.status\(status\)\.json\(\{[\s\S]*stack[\s\S]*\}\)/)
+  assert.doesNotMatch(serverFile, /res\.status\(status\)\.json\(\{[\s\S]*req\.body[\s\S]*\}\)/)
+  assert.doesNotMatch(serverFile, /res\.status\(status\)\.json\(\{[\s\S]*err\.message[\s\S]*\}\)/)
+})
