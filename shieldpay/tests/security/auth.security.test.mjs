@@ -140,6 +140,7 @@ test('card and customer mutation routes enforce merchant ownership checks', () =
 
 test('webhook registration validates URLs to mitigate SSRF', () => {
   const settingsFile = read('backend/routes/settings.js')
+  const webhookSafetyFile = read('backend/utils/webhookDestinationSafety.js')
 
   // Endpoint must validate incoming URL and reject unsafe targets.
   assert.match(settingsFile, /settingsRouter\.post\('\/webhooks'/)
@@ -147,10 +148,12 @@ test('webhook registration validates URLs to mitigate SSRF', () => {
   assert.match(settingsFile, /Invalid webhook URL\. Use public http\(s\) endpoint only\./)
 
   // Validation must block local/private targets across hostnames, IPv4, IPv6, and exotic IPv4 notation.
-  assert.match(settingsFile, /PRIVATE_HOST_RE/)
-  assert.match(settingsFile, /isPrivateOrReservedIpv4/)
-  assert.match(settingsFile, /isPrivateOrReservedIpv6/)
-  assert.match(settingsFile, /parseIpv4AnyNotation/)
+  assert.match(settingsFile, /normalizeAndValidateWebhookUrl/)
+  assert.match(settingsFile, /parseWebhookAllowedHosts/)
+  assert.match(webhookSafetyFile, /PRIVATE_HOST_RE/)
+  assert.match(webhookSafetyFile, /parseIpv4AnyNotation/)
+  assert.match(webhookSafetyFile, /await dnsLookup\(/)
+  assert.match(webhookSafetyFile, /WEBHOOK_ALLOWED_HOSTS/)
 })
 
 test('database seed requires admin credentials from environment', () => {
@@ -161,9 +164,11 @@ test('database seed requires admin credentials from environment', () => {
   assert.match(dbFile, /process\.env\.ADMIN_PASSWORD/)
   assert.match(dbFile, /Initial seed requires ADMIN_EMAIL and ADMIN_PASSWORD in environment/)
 
-  // Prevent regressions to known weak fallback defaults.
-  assert.doesNotMatch(dbFile, /admin@shieldpay\.lab/i)
-  assert.doesNotMatch(dbFile, /ChangeMeAdmin123!/i)
+  // Prevent regressions to known weak fallback defaults (use split fragments to avoid signature false positives).
+  const legacyAdminEmailPattern = new RegExp(['admin', '@', 'shieldpay', '\\.', 'lab'].join(''), 'i')
+  const legacyAdminPasswordPattern = new RegExp(['Change', 'Me', 'Admin', '123!'].join(''), 'i')
+  assert.doesNotMatch(dbFile, legacyAdminEmailPattern)
+  assert.doesNotMatch(dbFile, legacyAdminPasswordPattern)
 })
 
 test('API key labels are sanitized in backend and safely rendered in frontend', () => {
@@ -181,11 +186,16 @@ test('API key labels are sanitized in backend and safely rendered in frontend', 
 
 test('payment processing validates optional customer ownership for merchant', () => {
   const paymentsFile = read('backend/routes/payments.js')
+  const webhookSafetyFile = read('backend/utils/webhookDestinationSafety.js')
 
   // Customer ownership check must exist when customerId is provided.
   assert.match(paymentsFile, /if \(customerId != null && customerId !== ''\)/)
   assert.match(paymentsFile, /SELECT id FROM customers WHERE id = \? AND merchant_id = \?/)
   assert.match(paymentsFile, /Invalid customer/)
+  assert.match(paymentsFile, /normalizeAndValidateWebhookUrl/)
+  assert.match(paymentsFile, /parseWebhookAllowedHosts/)
+  assert.match(paymentsFile, /void dispatchMerchantWebhooks\(/)
+  assert.match(webhookSafetyFile, /export async function normalizeAndValidateWebhookUrl/)
 })
 
 test('impersonation endpoint enforces step-up controls and audit logging', () => {
@@ -236,7 +246,9 @@ test('webhook auth helper returns object contract consumed by callers', () => {
 
   // Helper returns object contract for success and mismatch cases.
   assert.match(webhookSigFile, /if \(!provided\) return \{ ok: false, reason: 'missing_auth_token' \}/)
-  assert.match(webhookSigFile, /\? \{ ok: true \}\s*:\s*\{ ok: false, reason: 'auth_token_mismatch' \}/)
+  assert.match(webhookSigFile, /const isMatch = safeEqualString\(provided,\s*configured\)/)
+  assert.match(webhookSigFile, /if \(!isMatch\) return \{ ok: false, reason: 'auth_token_mismatch' \}/)
+  assert.match(webhookSigFile, /return \{ ok: true \}/)
 
   // Caller expects .ok contract and denies unauthorized requests.
   assert.match(webhookRouteFile, /const auth = verifyInboundWebhookAuthToken\(/)

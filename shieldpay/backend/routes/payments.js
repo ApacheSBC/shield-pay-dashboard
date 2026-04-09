@@ -1,9 +1,12 @@
 import { Router } from 'express'
+import crypto from 'crypto'
 import { z } from 'zod'
 import { getDb } from '../db.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { cardRowToApi, encryptField, transactionRowToApiMasked } from '../crypto/cardFieldCrypto.js'
 import { validateRequest } from '../middleware/validateRequest.js'
+import { sanitizeErrorForLog } from '../utils/logSanitizer.js'
+import { normalizeAndValidateWebhookUrl, parseWebhookAllowedHosts } from '../utils/webhookDestinationSafety.js'
 
 export const paymentsRouter = Router()
 paymentsRouter.use(requireAuth)
@@ -13,6 +16,46 @@ const paymentProcessBodySchema = z.object({
   amountDollars: z.coerce.number().positive(),
   description: z.string().trim().max(200).optional(),
 })
+
+const webhookAllowedHosts = parseWebhookAllowedHosts()
+
+async function dispatchMerchantWebhooks(merchantId, eventPayload) {
+  const hooks = getDb().prepare('SELECT url, secret FROM webhooks WHERE merchant_id = ? AND active = 1').all(merchantId)
+  if (!hooks.length) return
+  const body = JSON.stringify(eventPayload)
+  const timestamp = String(Math.floor(Date.now() / 1000))
+
+  await Promise.all(
+    hooks.map(async (hook) => {
+      const safeUrl = await normalizeAndValidateWebhookUrl(hook.url, webhookAllowedHosts)
+      if (!safeUrl) return
+
+      const headers = {
+        'content-type': 'application/json',
+        'x-webhook-timestamp': timestamp,
+      }
+      if (hook.secret) {
+        const sig = crypto.createHmac('sha256', String(hook.secret)).update(`${timestamp}.${body}`, 'utf8').digest('hex')
+        headers['x-webhook-signature'] = `sha256=${sig}`
+      }
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 5000)
+      try {
+        await fetch(safeUrl, {
+          method: 'POST',
+          headers,
+          body,
+          signal: controller.signal,
+        })
+      } catch (err) {
+        console.warn('[ShieldPay webhook delivery]', sanitizeErrorForLog(err))
+      } finally {
+        clearTimeout(timeout)
+      }
+    }),
+  )
+}
 
 paymentsRouter.post('/process', validateRequest({ body: paymentProcessBodySchema }), (req, res, next) => {
   try {
@@ -51,6 +94,12 @@ paymentsRouter.post('/process', validateRequest({ body: paymentProcessBodySchema
       .run(req.user.id, custId, cardId, amount_cents, description || 'Payment', panSnap)
     const txRow = getDb().prepare('SELECT * FROM transactions WHERE id = ?').get(r.lastInsertRowid)
     const tx = transactionRowToApiMasked(txRow)
+    const webhookEvent = {
+      type: 'payment.captured',
+      merchantId: req.user.id,
+      transaction: tx,
+    }
+    void dispatchMerchantWebhooks(req.user.id, webhookEvent)
     res.status(201).json({
       transaction: tx,
     })

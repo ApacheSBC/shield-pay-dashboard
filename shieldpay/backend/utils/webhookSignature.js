@@ -37,9 +37,9 @@ export function verifyInboundWebhookAuthToken(authHeaderValue) {
   const provided = raw.startsWith('Bearer ') ? raw.slice(7).trim() : raw
   if (!provided) return { ok: false, reason: 'missing_auth_token' }
 
-  return safeEqualString(provided, configured)
-    ? { ok: true }
-    : { ok: false, reason: 'auth_token_mismatch' }
+  const isMatch = safeEqualString(provided, configured)
+  if (!isMatch) return { ok: false, reason: 'auth_token_mismatch' }
+  return { ok: true }
 }
 
 export function verifyInboundWebhookSignature({ rawBody, timestampHeader, signatureHeader }) {
