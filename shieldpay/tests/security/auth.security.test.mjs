@@ -229,3 +229,17 @@ test('password reset flow requires reset token and avoids legacy unauthenticated
   assert.doesNotMatch(text, /email\s*[,}]/)
   assert.doesNotMatch(text, /signToken\(/)
 })
+
+test('webhook auth helper returns object contract consumed by callers', () => {
+  const webhookSigFile = read('backend/utils/webhookSignature.js')
+  const webhookRouteFile = read('backend/routes/webhooks.js')
+
+  // Helper returns object contract for success and mismatch cases.
+  assert.match(webhookSigFile, /if \(!provided\) return \{ ok: false, reason: 'missing_auth_token' \}/)
+  assert.match(webhookSigFile, /\? \{ ok: true \}\s*:\s*\{ ok: false, reason: 'auth_token_mismatch' \}/)
+
+  // Caller expects .ok contract and denies unauthorized requests.
+  assert.match(webhookRouteFile, /const auth = verifyInboundWebhookAuthToken\(/)
+  assert.match(webhookRouteFile, /if \(!auth\.ok\)/)
+  assert.match(webhookRouteFile, /Unauthorized webhook request/)
+})
