@@ -2,6 +2,8 @@ import 'dotenv/config'
 import http from 'http'
 import express from 'express'
 import session from 'express-session'
+import { RedisStore } from 'connect-redis'
+import { createClient } from 'redis'
 import helmet from 'helmet'
 import fs from 'fs'
 import path from 'path'
@@ -16,6 +18,7 @@ const PORT = Number(process.env.PORT) || 8788
 const isProd = process.env.NODE_ENV === 'production'
 const MIN_SESSION_SECRET_LEN = 24
 const sessionSecret = (process.env.SESSION_SECRET || '').trim()
+const redisSessionUrl = String(process.env.REDIS_SESSION_URL || '').trim()
 const DEFAULT_ALLOWED_ORIGINS = [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]
 const corsAllowedOrigins = new Set(
   String(process.env.CORS_ALLOWED_ORIGINS || '')
@@ -52,6 +55,32 @@ if (!isProd) {
   connectSrc.add('ws:')
   connectSrc.add('wss:')
   for (const origin of corsAllowedOrigins) connectSrc.add(origin)
+}
+if (isProd) {
+  app.set('trust proxy', 1)
+}
+
+let sessionStore
+if (redisSessionUrl) {
+  try {
+    const redisClient = createClient({ url: redisSessionUrl })
+    redisClient.on('error', (err) => {
+      console.error('[ShieldPay] Redis session-store client error:', sanitizeErrorForLog(err))
+    })
+    await redisClient.connect()
+    sessionStore = new RedisStore({
+      client: redisClient,
+      prefix: 'shieldpay:sess:',
+    })
+    console.log('[ShieldPay] Using Redis session store')
+  } catch (err) {
+    console.error('[ShieldPay] Failed to initialize Redis session store')
+    console.error(sanitizeErrorForLog(err))
+    process.exit(1)
+  }
+} else if (isProd) {
+  console.error('REDIS_SESSION_URL is required in production for secure session storage.')
+  process.exit(1)
 }
 
 function normalizeOrigin(input) {
@@ -125,12 +154,14 @@ app.use(
 
 app.use(
   session({
+    store: sessionStore,
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
+    rolling: true,
     cookie: {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: isProd ? 'strict' : 'lax',
       secure: isProd,
       maxAge: 86400000,
     },

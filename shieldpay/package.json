@@ -7,12 +7,14 @@
     "dev": "node server.js",
     "build": "vite build --config frontend/vite.config.js",
     "start": "NODE_ENV=production node server.js",
-    "security:check-safe-errors": "node scripts/check-safe-errors.mjs"
+    "security:check-safe-errors": "node scripts/check-safe-errors.mjs",
+    "test:security": "node --test tests/security/*.test.mjs"
   },
   "dependencies": {
     "axios": "^1.7.9",
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.7.0",
+    "connect-redis": "^9.0.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^8.3.2",
