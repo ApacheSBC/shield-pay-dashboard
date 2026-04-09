@@ -5,17 +5,22 @@ const IV_LEN = 12
 const TAG_LEN = 16
 const KEY_LEN = 32
 
+let cachedKey = null
+
 function getKeyBuffer() {
-  const b64 = process.env.CARD_ENCRYPTION_KEY
-  if (b64) {
-    const k = Buffer.from(b64, 'base64')
-    if (k.length !== KEY_LEN) {
-      throw new Error('CARD_ENCRYPTION_KEY must be base64 encoding of exactly 32 bytes')
-    }
-    return k
+  if (cachedKey) return cachedKey
+  const b64 = (process.env.CARD_ENCRYPTION_KEY || '').trim()
+  if (!b64) {
+    throw new Error(
+      'CARD_ENCRYPTION_KEY is required and must be a base64-encoded 32-byte key (openssl rand -base64 32).',
+    )
   }
-  const material = process.env.JWT_SECRET || 'shieldpay-weak-lab-secret-guess-me'
-  return crypto.scryptSync(material, 'shieldpay-card-field-v1', KEY_LEN)
+  const k = Buffer.from(b64, 'base64')
+  if (k.length !== KEY_LEN) {
+    throw new Error('CARD_ENCRYPTION_KEY must be base64 encoding of exactly 32 bytes')
+  }
+  cachedKey = k
+  return cachedKey
 }
 
 /** Encrypt UTF-8 string for storage (PAN, CVV, snapshots). */
