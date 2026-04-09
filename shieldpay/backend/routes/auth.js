@@ -6,6 +6,7 @@ import { signToken } from '../auth/jwt.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { buildAuthProtection } from '../middleware/authRateLimit.js'
 import { validateRequest } from '../middleware/validateRequest.js'
+import { logInfo } from '../utils/logger.js'
 import { z } from 'zod'
 
 export const authRouter = Router()
@@ -384,7 +385,7 @@ authRouter.post(
         .run(row.id, tokenHash, expiresAt)
 
       // In production, this token must be sent via email provider; do not log PII or raw token values.
-      console.log('[ShieldPay] Password reset token generated (token_length=%d)', resetToken.length)
+      logInfo('[ShieldPay] Password reset token generated', { tokenLength: resetToken.length })
     }
 
     res.json({
@@ -436,7 +437,7 @@ authRouter.post(
     getDb().prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(resetRow.user_id)
 
     // In production this should trigger a user email notification via your mail provider.
-    console.log('[ShieldPay] Password changed for user_id=%d; existing sessions invalidated', resetRow.user_id)
+    logInfo('[ShieldPay] Password changed; existing sessions invalidated', { userId: resetRow.user_id })
     res.json({ message: 'Password updated' })
   } catch (e) {
     next(e)

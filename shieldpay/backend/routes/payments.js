@@ -5,8 +5,8 @@ import { getDb } from '../db.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { cardRowToApi, encryptField, transactionRowToApiMasked } from '../crypto/cardFieldCrypto.js'
 import { validateRequest } from '../middleware/validateRequest.js'
-import { sanitizeErrorForLog } from '../utils/logSanitizer.js'
 import { normalizeAndValidateWebhookUrl, parseWebhookAllowedHosts } from '../utils/webhookDestinationSafety.js'
+import { logWarn } from '../utils/logger.js'
 
 export const paymentsRouter = Router()
 paymentsRouter.use(requireAuth)
@@ -49,7 +49,7 @@ async function dispatchMerchantWebhooks(merchantId, eventPayload) {
           signal: controller.signal,
         })
       } catch (err) {
-        console.warn('[ShieldPay webhook delivery]', sanitizeErrorForLog(err))
+        logWarn('[ShieldPay webhook delivery failed', err)
       } finally {
         clearTimeout(timeout)
       }

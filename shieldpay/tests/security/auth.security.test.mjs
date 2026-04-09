@@ -11,6 +11,20 @@ function read(relPath) {
   return fs.readFileSync(path.join(projectRoot, relPath), 'utf8')
 }
 
+function listJsFiles(dir) {
+  const out = []
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name)
+    const st = fs.statSync(full)
+    if (st.isDirectory()) {
+      out.push(...listJsFiles(full))
+    } else if (/\.(js|mjs)$/.test(name)) {
+      out.push(full)
+    }
+  }
+  return out
+}
+
 test('JWT implementation uses RS256 with required claims checks', () => {
   const jwtFile = read('backend/auth/jwt.js')
   assert.match(jwtFile, /algorithm:\s*'RS256'/)
@@ -60,6 +74,7 @@ test('request logger redacts and sanitizes request bodies before logging', () =>
 
   // Ensure output is passed through centralized sanitizer before console output.
   assert.match(requestLoggerFile, /sanitizeText\(JSON\.stringify\(redacted\)\)/)
+  assert.match(requestLoggerFile, /logInfo\(/)
 })
 
 test('settings page keeps API secret in ephemeral reveal flow, not message banner', () => {
@@ -110,7 +125,7 @@ test('global API error handler returns generic messages only', () => {
   const serverFile = read('server.js')
 
   // Server logs sanitized details internally.
-  assert.match(serverFile, /console\.error\('\[ShieldPay API error\]', sanitizeErrorForLog\(err\)\)/)
+  assert.match(serverFile, /logError\('\[ShieldPay API error\]', sanitizeErrorForLog\(err\)\)/)
 
   // Response should use generic mapped messages and never expose stack/body.
   assert.match(serverFile, /const messageByStatus = \{/)
@@ -270,4 +285,14 @@ test('log sanitizer masks sensitive values in log text', async () => {
   assert.doesNotMatch(out, /4111111111111111/)
   assert.doesNotMatch(out, /eyJhbGci/i)
   assert.match(out, /\[REDACTED\]|\*\*\*EMAIL\*\*\*|\*\*\*CARD\*\*\*|\*\*\*CVV\*\*\*/)
+})
+
+test('backend routes and middleware avoid direct console logging', () => {
+  const root = path.join(projectRoot, 'backend')
+  const files = listJsFiles(root)
+  const offenders = files
+    .filter((f) => !f.endsWith(path.join('backend', 'utils', 'logger.js')))
+    .filter((f) => /console\.(log|warn|error)\(/.test(fs.readFileSync(f, 'utf8')))
+
+  assert.deepEqual(offenders, [])
 })

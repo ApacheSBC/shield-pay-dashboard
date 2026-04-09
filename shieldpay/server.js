@@ -12,6 +12,7 @@ import { initDb } from './backend/db.js'
 import { apiRouter } from './backend/routes/index.js'
 import { requestBodyLogger } from './backend/middleware/requestLogger.js'
 import { sanitizeErrorForLog } from './backend/utils/logSanitizer.js'
+import { logError, logInfo } from './backend/utils/logger.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT) || 8788
@@ -32,21 +33,18 @@ if (corsAllowedOrigins.size === 0) {
 }
 
 if (!sessionSecret) {
-  console.error(
-    'SESSION_SECRET is required. Set a strong random value in .env before starting the server.',
-  )
+  logError('SESSION_SECRET is required. Set a strong random value in .env before starting the server.')
   process.exit(1)
 }
 if (sessionSecret.length < MIN_SESSION_SECRET_LEN) {
-  console.error(`SESSION_SECRET must be at least ${MIN_SESSION_SECRET_LEN} characters long.`)
+  logError(`SESSION_SECRET must be at least ${MIN_SESSION_SECRET_LEN} characters long.`)
   process.exit(1)
 }
 
 try {
   await initDb()
 } catch (err) {
-  console.error('[ShieldPay] Database init failed (is better-sqlite3 built for your Node version?)')
-  console.error(sanitizeErrorForLog(err))
+  logError('[ShieldPay] Database init failed (is better-sqlite3 built for your Node version?)', err)
   process.exit(1)
 }
 
@@ -66,21 +64,20 @@ if (redisSessionUrl) {
   try {
     const redisClient = createClient({ url: redisSessionUrl })
     redisClient.on('error', (err) => {
-      console.error('[ShieldPay] Redis session-store client error:', sanitizeErrorForLog(err))
+      logError('[ShieldPay] Redis session-store client error', err)
     })
     await redisClient.connect()
     sessionStore = new RedisStore({
       client: redisClient,
       prefix: 'shieldpay:sess:',
     })
-    console.log('[ShieldPay] Using Redis session store')
+    logInfo('[ShieldPay] Using Redis session store')
   } catch (err) {
-    console.error('[ShieldPay] Failed to initialize Redis session store')
-    console.error(sanitizeErrorForLog(err))
+    logError('[ShieldPay] Failed to initialize Redis session store', err)
     process.exit(1)
   }
 } else if (isProd) {
-  console.error('REDIS_SESSION_URL is required in production for secure session storage.')
+  logError('REDIS_SESSION_URL is required in production for secure session storage.')
   process.exit(1)
 }
 
@@ -185,7 +182,7 @@ const server = http.createServer(app)
 if (isProd) {
   const dist = path.join(__dirname, 'frontend', 'dist')
   if (!fs.existsSync(dist)) {
-    console.error(
+    logError(
       '[ShieldPay] Production build missing. Run `npm run build` to create frontend/dist, then `npm start`.',
     )
     process.exit(1)
@@ -209,7 +206,7 @@ if (isProd) {
 }
 
 app.use((err, req, res, next) => {
-  console.error('[ShieldPay API error]', sanitizeErrorForLog(err))
+  logError('[ShieldPay API error]', sanitizeErrorForLog(err))
   const status = Number.isInteger(err?.status) ? err.status : 500
   const messageByStatus = {
     400: 'Bad request',
@@ -226,15 +223,13 @@ app.use((err, req, res, next) => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(
-      `[ShieldPay] Port ${PORT} is already in use. Set a free port in .env, e.g. PORT=8792, then run again.`,
-    )
+    logError(`[ShieldPay] Port ${PORT} is already in use. Set a free port in .env, e.g. PORT=8792, then run again.`)
   } else {
-    console.error(sanitizeErrorForLog(err))
+    logError('[ShieldPay] Server startup error', err)
   }
   process.exit(1)
 })
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`ShieldPay listening at http://127.0.0.1:${PORT}`)
+  logInfo(`ShieldPay listening at http://127.0.0.1:${PORT}`)
 })
