@@ -8,6 +8,10 @@ import { requireAuth } from '../middleware/requireAuth.js'
 export const authRouter = Router()
 const PASSWORD_RESET_TTL_MINUTES = 15
 const MIN_PASSWORD_LEN = 12
+const IMPERSONATE_WINDOW_MS = 10 * 60 * 1000
+const IMPERSONATE_MAX_ATTEMPTS = 5
+const MFA_TIME_STEP_SECONDS = 30
+const impersonateBuckets = new Map()
 
 function normalizeEmail(email) {
   return String(email || '')
@@ -25,6 +29,77 @@ function isStrongPassword(password) {
 
 function hashResetToken(token) {
   return crypto.createHash('sha256').update(String(token), 'utf8').digest('hex')
+}
+
+function getClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for']
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim()
+  }
+  return req.socket?.remoteAddress || ''
+}
+
+function nowStep() {
+  return Math.floor(Date.now() / 1000 / MFA_TIME_STEP_SECONDS)
+}
+
+function otpForStep(secret, step) {
+  const digest = crypto
+    .createHmac('sha256', secret)
+    .update(String(step), 'utf8')
+    .digest('hex')
+  const tail = digest.slice(-8)
+  const num = Number.parseInt(tail, 16) % 1000000
+  return String(num).padStart(6, '0')
+}
+
+function isValidMfaCode(secret, providedCode) {
+  const code = String(providedCode || '').trim()
+  if (!/^\d{6}$/.test(code)) return false
+  const step = nowStep()
+  return (
+    otpForStep(secret, step) === code ||
+    otpForStep(secret, step - 1) === code ||
+    otpForStep(secret, step + 1) === code
+  )
+}
+
+function consumeImpersonationQuota(adminId, ip) {
+  const key = `${adminId}:${ip}`
+  const now = Date.now()
+  const bucket = impersonateBuckets.get(key)
+  if (!bucket || now - bucket.windowStart > IMPERSONATE_WINDOW_MS) {
+    impersonateBuckets.set(key, { windowStart: now, attempts: 1 })
+    return true
+  }
+  if (bucket.attempts >= IMPERSONATE_MAX_ATTEMPTS) {
+    return false
+  }
+  bucket.attempts += 1
+  return true
+}
+
+function logImpersonationEvent({ adminUserId, adminEmail, targetUserId, targetEmail, success, reason, ip, userAgent }) {
+  try {
+    getDb()
+      .prepare(
+        `INSERT INTO impersonation_audit_logs
+         (admin_user_id, admin_email, target_user_id, target_email, success, reason, ip_address, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        adminUserId ?? null,
+        adminEmail ?? null,
+        targetUserId ?? null,
+        targetEmail ?? null,
+        success ? 1 : 0,
+        reason ?? null,
+        ip ?? null,
+        userAgent ?? null,
+      )
+  } catch {
+    // Do not block request path if audit insert fails.
+  }
 }
 
 authRouter.post('/register', async (req, res, next) => {
@@ -183,26 +258,113 @@ authRouter.post('/reset-password', async (req, res, next) => {
   }
 })
 
-// ARKO-LAB-08: impersonation returns the target session token in JSON (no MFA, no email challenge).
 authRouter.post('/impersonate', requireAuth, (req, res, next) => {
   try {
-    const { targetEmail, adminPassword } = req.body
-    if (!targetEmail || !adminPassword) {
-      return res.status(400).json({ error: 'targetEmail and adminPassword required' })
+    const { targetEmail, adminPassword, mfaCode, adminEmail } = req.body
+    const targetEmailNorm = normalizeEmail(targetEmail)
+    const adminEmailNorm = normalizeEmail(adminEmail)
+    const ip = getClientIp(req)
+    const userAgent = String(req.headers['user-agent'] || '')
+
+    if (!targetEmailNorm || !adminPassword || !mfaCode || !adminEmailNorm) {
+      return res
+        .status(400)
+        .json({ error: 'targetEmail, adminEmail, adminPassword, and mfaCode are required' })
     }
+    if (!isValidEmail(targetEmailNorm) || !isValidEmail(adminEmailNorm)) {
+      return res.status(400).json({ error: 'Invalid email format' })
+    }
+    if (!consumeImpersonationQuota(req.user.id, ip)) {
+      logImpersonationEvent({
+        adminUserId: req.user.id,
+        adminEmail: req.user.email,
+        targetEmail: targetEmailNorm,
+        success: false,
+        reason: 'rate_limited',
+        ip,
+        userAgent,
+      })
+      return res.status(429).json({ error: 'Too many impersonation attempts. Try again later.' })
+    }
+
     const adminRow = getDb()
-      .prepare('SELECT id, password_hash, role FROM users WHERE id = ?')
+      .prepare('SELECT id, email, password_hash, role FROM users WHERE id = ?')
       .get(req.user.id)
     if (!adminRow || adminRow.role !== 'admin') {
+      logImpersonationEvent({
+        adminUserId: req.user.id,
+        adminEmail: req.user.email,
+        targetEmail: targetEmailNorm,
+        success: false,
+        reason: 'not_admin',
+        ip,
+        userAgent,
+      })
       return res.status(403).json({ error: 'Admin only' })
     }
+    if (adminEmailNorm !== normalizeEmail(adminRow.email)) {
+      logImpersonationEvent({
+        adminUserId: adminRow.id,
+        adminEmail: adminRow.email,
+        targetEmail: targetEmailNorm,
+        success: false,
+        reason: 'admin_email_mismatch',
+        ip,
+        userAgent,
+      })
+      return res.status(403).json({ error: 'Admin email verification failed' })
+    }
     if (!bcrypt.compareSync(adminPassword, adminRow.password_hash)) {
+      logImpersonationEvent({
+        adminUserId: adminRow.id,
+        adminEmail: adminRow.email,
+        targetEmail: targetEmailNorm,
+        success: false,
+        reason: 'invalid_admin_password',
+        ip,
+        userAgent,
+      })
       return res.status(401).json({ error: 'Invalid admin password' })
     }
+    const mfaSecret = (process.env.ADMIN_MFA_SECRET || '').trim()
+    if (!mfaSecret) {
+      logImpersonationEvent({
+        adminUserId: adminRow.id,
+        adminEmail: adminRow.email,
+        targetEmail: targetEmailNorm,
+        success: false,
+        reason: 'mfa_not_configured',
+        ip,
+        userAgent,
+      })
+      return res.status(503).json({ error: 'Admin MFA is not configured' })
+    }
+    if (!isValidMfaCode(mfaSecret, mfaCode)) {
+      logImpersonationEvent({
+        adminUserId: adminRow.id,
+        adminEmail: adminRow.email,
+        targetEmail: targetEmailNorm,
+        success: false,
+        reason: 'invalid_mfa_code',
+        ip,
+        userAgent,
+      })
+      return res.status(401).json({ error: 'Invalid MFA code' })
+    }
+
     const target = getDb()
       .prepare('SELECT id, email, role, merchant_name FROM users WHERE email = ?')
-      .get(targetEmail)
+      .get(targetEmailNorm)
     if (!target) {
+      logImpersonationEvent({
+        adminUserId: adminRow.id,
+        adminEmail: adminRow.email,
+        targetEmail: targetEmailNorm,
+        success: false,
+        reason: 'target_not_found',
+        ip,
+        userAgent,
+      })
       return res.status(404).json({ error: 'Target user not found' })
     }
     const token = signToken({
@@ -210,6 +372,16 @@ authRouter.post('/impersonate', requireAuth, (req, res, next) => {
       email: target.email,
       role: target.role,
       merchantName: target.merchant_name,
+    })
+    logImpersonationEvent({
+      adminUserId: adminRow.id,
+      adminEmail: adminRow.email,
+      targetUserId: target.id,
+      targetEmail: target.email,
+      success: true,
+      reason: 'success',
+      ip,
+      userAgent,
     })
     res.json({
       impersonatedUser: { id: target.id, email: target.email, role: target.role },

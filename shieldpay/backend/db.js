@@ -73,6 +73,22 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
     CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_reset_tokens(expires_at);
+
+    CREATE TABLE IF NOT EXISTS impersonation_audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      admin_email TEXT,
+      target_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      target_email TEXT,
+      success INTEGER NOT NULL DEFAULT 0,
+      reason TEXT,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_impersonation_audit_logs_admin ON impersonation_audit_logs(admin_user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_impersonation_audit_logs_target ON impersonation_audit_logs(target_user_id, created_at);
   `)
 
   ensureCardsTable(dbInstance)
