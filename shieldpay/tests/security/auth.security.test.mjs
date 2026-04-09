@@ -165,3 +165,16 @@ test('database seed requires admin credentials from environment', () => {
   assert.doesNotMatch(dbFile, /admin@shieldpay\.lab/i)
   assert.doesNotMatch(dbFile, /ChangeMeAdmin123!/i)
 })
+
+test('API key labels are sanitized in backend and safely rendered in frontend', () => {
+  const settingsRouteFile = read('backend/routes/settings.js')
+  const settingsPageFile = read('frontend/src/pages/Settings.jsx')
+
+  // Backend sanitizes labels before persistence and response.
+  assert.match(settingsRouteFile, /function sanitizeLabel\(/)
+  assert.match(settingsRouteFile, /const labelSafe = sanitizeLabel\(label\)/)
+  assert.match(settingsRouteFile, /label:\s*sanitizeLabel\(k\.label\)/)
+
+  // Frontend renders labels via safe display helper.
+  assert.match(settingsPageFile, /safeDisplayText\(k\.label\)/)
+})
