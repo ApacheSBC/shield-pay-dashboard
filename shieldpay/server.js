@@ -15,6 +15,16 @@ const PORT = Number(process.env.PORT) || 8788
 const isProd = process.env.NODE_ENV === 'production'
 const MIN_SESSION_SECRET_LEN = 24
 const sessionSecret = (process.env.SESSION_SECRET || '').trim()
+const DEFAULT_ALLOWED_ORIGINS = [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]
+const corsAllowedOrigins = new Set(
+  String(process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean),
+)
+if (corsAllowedOrigins.size === 0) {
+  for (const origin of DEFAULT_ALLOWED_ORIGINS) corsAllowedOrigins.add(origin)
+}
 
 if (!sessionSecret) {
   console.error(
@@ -36,6 +46,45 @@ try {
 }
 
 const app = express()
+
+function normalizeOrigin(input) {
+  try {
+    const parsed = new URL(String(input))
+    return parsed.origin
+  } catch {
+    return null
+  }
+}
+
+function isOriginAllowed(originHeader) {
+  const normalized = normalizeOrigin(originHeader)
+  return Boolean(normalized && corsAllowedOrigins.has(normalized))
+}
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin
+  if (!origin) return next()
+
+  res.setHeader('Vary', 'Origin')
+
+  if (!isOriginAllowed(origin)) {
+    if (req.method === 'OPTIONS') {
+      return res.status(403).end()
+    }
+    return res.status(403).json({ error: 'Origin not allowed' })
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', normalizeOrigin(origin))
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+  res.setHeader('Access-Control-Max-Age', '600')
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end()
+  }
+  next()
+})
 
 app.use(
   session({
