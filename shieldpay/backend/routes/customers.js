@@ -1,8 +1,29 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import { getDb } from '../db.js'
 import { requireAuth } from '../middleware/requireAuth.js'
+import { validateRequest, zIdParam } from '../middleware/validateRequest.js'
 
 const MAX_CUSTOMER_SEARCH_LEN = 256
+const customerSearchQuerySchema = z.object({
+  search: z.string().trim().max(MAX_CUSTOMER_SEARCH_LEN).optional(),
+})
+const customerCreateBodySchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(254).optional().or(z.literal('')),
+  phone: z.string().trim().max(32).optional().or(z.literal('')),
+  notes: z.string().trim().max(2000).optional().or(z.literal('')),
+})
+const customerUpdateBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    email: z.string().trim().email().max(254).optional().or(z.literal('')),
+    phone: z.string().trim().max(32).optional().or(z.literal('')),
+    notes: z.string().trim().max(2000).optional().or(z.literal('')),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: 'At least one field must be provided',
+  })
 
 /** Escape % and _ so user input cannot broaden a LIKE pattern; backslashes doubled for ESCAPE '\\'. */
 function escapeLikeLiteral(fragment) {
@@ -15,7 +36,7 @@ function escapeLikeLiteral(fragment) {
 export const customersRouter = Router()
 customersRouter.use(requireAuth)
 
-customersRouter.get('/', (req, res, next) => {
+customersRouter.get('/', validateRequest({ query: customerSearchQuerySchema }), (req, res, next) => {
   try {
     const merchantId = req.user.id
     if (req.user.role !== 'merchant') {
@@ -47,7 +68,7 @@ customersRouter.get('/', (req, res, next) => {
   }
 })
 
-customersRouter.post('/', (req, res, next) => {
+customersRouter.post('/', validateRequest({ body: customerCreateBodySchema }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
@@ -66,7 +87,7 @@ customersRouter.post('/', (req, res, next) => {
   }
 })
 
-customersRouter.get('/:id', (req, res, next) => {
+customersRouter.get('/:id', validateRequest({ params: zIdParam }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
@@ -82,7 +103,10 @@ customersRouter.get('/:id', (req, res, next) => {
 })
 
 // Enforce ownership: merchant can only update customers they own.
-customersRouter.put('/:id', (req, res, next) => {
+customersRouter.put(
+  '/:id',
+  validateRequest({ params: zIdParam, body: customerUpdateBodySchema }),
+  (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
@@ -104,10 +128,11 @@ customersRouter.put('/:id', (req, res, next) => {
   } catch (e) {
     next(e)
   }
-})
+  },
+)
 
 // Enforce ownership: merchant can only delete customers they own.
-customersRouter.delete('/:id', (req, res, next) => {
+customersRouter.delete('/:id', validateRequest({ params: zIdParam }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })

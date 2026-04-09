@@ -1,9 +1,11 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import crypto from 'crypto'
+import { z } from 'zod'
 import { getDb } from '../db.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { cardRowToApiMasked, transactionRowToApiMasked } from '../crypto/cardFieldCrypto.js'
+import { validateRequest } from '../middleware/validateRequest.js'
 
 const PRIVATE_IPV4_RE =
   /^(127\.|10\.|0\.0\.0\.0$|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/
@@ -11,6 +13,16 @@ const PRIVATE_HOST_RE = /^(localhost|localhost\.localdomain|.*\.local)$/i
 const IPV6_LOOPBACK_RE = /^(::1|0:0:0:0:0:0:0:1)$/i
 const MAX_LABEL_LEN = 80
 const MAX_MERCHANT_NAME_LEN = 120
+const profilePatchBodySchema = z.object({
+  merchantName: z.string().trim().min(1).max(MAX_MERCHANT_NAME_LEN).optional(),
+})
+const apiKeysCreateBodySchema = z.object({
+  label: z.string().trim().max(MAX_LABEL_LEN).optional(),
+})
+const webhookCreateBodySchema = z.object({
+  url: z.string().trim().url().max(2048),
+  secret: z.string().trim().max(512).optional(),
+})
 
 function validateWebhookUrl(input) {
   if (typeof input !== 'string') return null
@@ -72,7 +84,7 @@ settingsRouter.get('/profile', (req, res, next) => {
   }
 })
 
-settingsRouter.patch('/profile', async (req, res, next) => {
+settingsRouter.patch('/profile', validateRequest({ body: profilePatchBodySchema }), async (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
@@ -113,7 +125,7 @@ settingsRouter.get('/api-keys', (req, res, next) => {
   }
 })
 
-settingsRouter.post('/api-keys', async (req, res, next) => {
+settingsRouter.post('/api-keys', validateRequest({ body: apiKeysCreateBodySchema }), async (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
@@ -172,7 +184,7 @@ settingsRouter.get('/webhooks', (req, res, next) => {
   }
 })
 
-settingsRouter.post('/webhooks', (req, res, next) => {
+settingsRouter.post('/webhooks', validateRequest({ body: webhookCreateBodySchema }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })

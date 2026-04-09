@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { getDb } from '../db.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { transactionRowToApiMasked } from '../crypto/cardFieldCrypto.js'
+import { validateRequest, zIdParam } from '../middleware/validateRequest.js'
 
 export const transactionsRouter = Router()
 transactionsRouter.use(requireAuth)
@@ -29,7 +30,7 @@ transactionsRouter.get('/', (req, res, next) => {
   }
 })
 
-transactionsRouter.get('/:id', (req, res, next) => {
+transactionsRouter.get('/:id', validateRequest({ params: zIdParam }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })

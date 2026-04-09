@@ -1,6 +1,8 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import { getDb } from '../db.js'
 import { requireAuth } from '../middleware/requireAuth.js'
+import { validateRequest, zIdParam } from '../middleware/validateRequest.js'
 import {
   cardRowToApiMasked,
   encryptField,
@@ -14,6 +16,24 @@ import {
 
 export const cardsRouter = Router()
 cardsRouter.use(requireAuth)
+const cardCreateBodySchema = z.object({
+  customerId: z.coerce.number().int().positive(),
+  pan: z.union([z.string(), z.number()]),
+  cvv: z.union([z.string(), z.number()]),
+  brand: z.string().trim().max(40).optional(),
+  expMonth: z.union([z.string(), z.number()]).optional(),
+  expYear: z.union([z.string(), z.number()]).optional(),
+  label: z.string().trim().max(80).optional(),
+})
+const cardUpdateBodySchema = z
+  .object({
+    label: z.string().trim().max(80).optional(),
+    expMonth: z.union([z.string(), z.number()]).optional(),
+    expYear: z.union([z.string(), z.number()]).optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: 'At least one field must be provided',
+  })
 
 cardsRouter.get('/', (req, res, next) => {
   try {
@@ -33,7 +53,7 @@ cardsRouter.get('/', (req, res, next) => {
   }
 })
 
-cardsRouter.post('/', (req, res, next) => {
+cardsRouter.post('/', validateRequest({ body: cardCreateBodySchema }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
@@ -85,7 +105,7 @@ cardsRouter.post('/', (req, res, next) => {
   }
 })
 
-cardsRouter.get('/:id', (req, res, next) => {
+cardsRouter.get('/:id', validateRequest({ params: zIdParam }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
@@ -103,7 +123,7 @@ cardsRouter.get('/:id', (req, res, next) => {
 })
 
 // Enforce ownership: merchant can only update cards they own.
-cardsRouter.put('/:id', (req, res, next) => {
+cardsRouter.put('/:id', validateRequest({ params: zIdParam, body: cardUpdateBodySchema }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
@@ -128,7 +148,7 @@ cardsRouter.put('/:id', (req, res, next) => {
 })
 
 // Enforce ownership: merchant can only delete cards they own.
-cardsRouter.delete('/:id', (req, res, next) => {
+cardsRouter.delete('/:id', validateRequest({ params: zIdParam }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })

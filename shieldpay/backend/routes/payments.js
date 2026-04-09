@@ -1,12 +1,20 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import { getDb } from '../db.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { cardRowToApi, encryptField, transactionRowToApiMasked } from '../crypto/cardFieldCrypto.js'
+import { validateRequest } from '../middleware/validateRequest.js'
 
 export const paymentsRouter = Router()
 paymentsRouter.use(requireAuth)
+const paymentProcessBodySchema = z.object({
+  cardId: z.coerce.number().int().positive(),
+  customerId: z.coerce.number().int().positive().optional(),
+  amountDollars: z.coerce.number().positive(),
+  description: z.string().trim().max(200).optional(),
+})
 
-paymentsRouter.post('/process', (req, res, next) => {
+paymentsRouter.post('/process', validateRequest({ body: paymentProcessBodySchema }), (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })

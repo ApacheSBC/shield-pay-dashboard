@@ -5,6 +5,8 @@ import { getDb } from '../db.js'
 import { signToken } from '../auth/jwt.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { buildAuthProtection } from '../middleware/authRateLimit.js'
+import { validateRequest } from '../middleware/validateRequest.js'
+import { z } from 'zod'
 
 export const authRouter = Router()
 const authProtection = await buildAuthProtection()
@@ -14,6 +16,28 @@ const IMPERSONATE_WINDOW_MS = 10 * 60 * 1000
 const IMPERSONATE_MAX_ATTEMPTS = 5
 const MFA_TIME_STEP_SECONDS = 30
 const impersonateBuckets = new Map()
+const registerBodySchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(MIN_PASSWORD_LEN),
+  merchantName: z.string().trim().max(120).optional(),
+})
+const loginBodySchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+})
+const requestResetBodySchema = z.object({
+  email: z.string().email(),
+})
+const resetPasswordBodySchema = z.object({
+  token: z.string().min(1).max(512),
+  newPassword: z.string().min(MIN_PASSWORD_LEN),
+})
+const impersonateBodySchema = z.object({
+  targetEmail: z.string().email(),
+  adminEmail: z.string().email(),
+  adminPassword: z.string().min(1),
+  mfaCode: z.string().regex(/^\d{6}$/),
+})
 
 function normalizeEmail(email) {
   return String(email || '')
@@ -104,7 +128,7 @@ function logImpersonationEvent({ adminUserId, adminEmail, targetUserId, targetEm
   }
 }
 
-authRouter.post('/register', ...authProtection.register, async (req, res, next) => {
+authRouter.post('/register', ...authProtection.register, validateRequest({ body: registerBodySchema }), async (req, res, next) => {
   try {
     const { password, merchantName } = req.body
     const email = normalizeEmail(req.body.email)
@@ -155,7 +179,7 @@ authRouter.post('/register', ...authProtection.register, async (req, res, next) 
   }
 })
 
-authRouter.post('/login', ...authProtection.login, async (req, res, next) => {
+authRouter.post('/login', ...authProtection.login, validateRequest({ body: loginBodySchema }), async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email)
     const { password } = req.body
@@ -205,7 +229,11 @@ authRouter.post('/logout', (req, res) => {
 })
 
 // Request a password reset; response is always generic to avoid account enumeration.
-authRouter.post('/request-password-reset', ...authProtection.passwordResetRequest, (req, res, next) => {
+authRouter.post(
+  '/request-password-reset',
+  ...authProtection.passwordResetRequest,
+  validateRequest({ body: requestResetBodySchema }),
+  (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email)
     if (!email || !isValidEmail(email)) {
@@ -240,9 +268,14 @@ authRouter.post('/request-password-reset', ...authProtection.passwordResetReques
   } catch (e) {
     next(e)
   }
-})
+  },
+)
 
-authRouter.post('/reset-password', ...authProtection.passwordResetConfirm, async (req, res, next) => {
+authRouter.post(
+  '/reset-password',
+  ...authProtection.passwordResetConfirm,
+  validateRequest({ body: resetPasswordBodySchema }),
+  async (req, res, next) => {
   try {
     const { token, newPassword } = req.body
     if (!token || !newPassword) {
@@ -276,9 +309,15 @@ authRouter.post('/reset-password', ...authProtection.passwordResetConfirm, async
   } catch (e) {
     next(e)
   }
-})
+  },
+)
 
-authRouter.post('/impersonate', requireAuth, ...authProtection.impersonate, (req, res, next) => {
+authRouter.post(
+  '/impersonate',
+  requireAuth,
+  ...authProtection.impersonate,
+  validateRequest({ body: impersonateBodySchema }),
+  (req, res, next) => {
   try {
     const { targetEmail, adminPassword, mfaCode, adminEmail } = req.body
     const targetEmailNorm = normalizeEmail(targetEmail)
@@ -410,4 +449,5 @@ authRouter.post('/impersonate', requireAuth, ...authProtection.impersonate, (req
   } catch (e) {
     next(e)
   }
-})
+  },
+)
