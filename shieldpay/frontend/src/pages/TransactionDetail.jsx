@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import client from '../api/client.js'
+import { safeDisplayText } from '../utils/safeDisplayText.js'
 
 export default function TransactionDetail() {
   const { id } = useParams()
@@ -28,13 +29,13 @@ export default function TransactionDetail() {
           <strong>Amount:</strong> ${(tx.amount_cents / 100).toFixed(2)} {tx.currency}
         </p>
         <p>
-          <strong>Status:</strong> <span className="pill">{tx.status}</span>
+          <strong>Status:</strong> <span className="pill">{safeDisplayText(tx.status, '—')}</span>
         </p>
         <p>
-          <strong>Customer:</strong> {tx.customer_name || '—'}
+          <strong>Customer:</strong> {safeDisplayText(tx.customer_name, '—')}
         </p>
         <p>
-          <strong>Description:</strong> {tx.description || '—'}
+          <strong>Description:</strong> {safeDisplayText(tx.description, '—')}
         </p>
         <p>
           <strong>PAN snapshot (masked):</strong>{' '}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import client from '../api/client.js'
+import { safeDisplayText } from '../utils/safeDisplayText.js'
 
 function last7DaysKeys() {
   const out = []
@@ -87,10 +88,10 @@ export default function Dashboard() {
                   <td>
                     <Link to={`/transactions/${t.id}`}>{t.id}</Link>
                   </td>
-                  <td>{t.customer_name || '—'}</td>
+                  <td>{safeDisplayText(t.customer_name, '—')}</td>
                   <td>${(t.amount_cents / 100).toFixed(2)}</td>
                   <td>
-                    <span className="pill">{t.status}</span>
+                    <span className="pill">{safeDisplayText(t.status, '—')}</span>
                   </td>
                   <td className="mono">{t.created_at}</td>
                 </tr>

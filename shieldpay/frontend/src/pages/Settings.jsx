@@ -1,10 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import client from '../api/client.js'
-
-function sanitizeDisplayText(input) {
-  if (typeof input !== 'string') return ''
-  return input.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/[<>`]/g, '').trim()
-}
+import { safeDisplayText } from '../utils/safeDisplayText.js'
 
 export default function Settings() {
   const [profile, setProfile] = useState(null)
@@ -101,7 +97,7 @@ export default function Settings() {
         <ul style={{ color: 'var(--muted)', paddingLeft: '1.2rem' }}>
           {keys.map((k) => (
             <li key={k.id}>
-              {sanitizeDisplayText(k.label)} — {k.key_prefix}… ({k.created_at})
+              {safeDisplayText(k.label)} — {k.key_prefix}… ({k.created_at})
             </li>
           ))}
         </ul>
@@ -121,7 +117,7 @@ export default function Settings() {
         <ul style={{ color: 'var(--muted)', paddingLeft: '1.2rem' }}>
           {hooks.map((h) => (
             <li key={h.id}>
-              {h.url} {h.active ? '(active)' : ''}
+              {safeDisplayText(h.url)} {h.active ? '(active)' : ''}
             </li>
           ))}
         </ul>

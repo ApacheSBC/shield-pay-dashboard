@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import client from '../api/client.js'
 import { safeErrorMessage } from '../utils/safeErrorMessage.js'
+import { safeDisplayText } from '../utils/safeDisplayText.js'
 
 export default function NewPayment() {
   const [cards, setCards] = useState([])
@@ -45,7 +46,7 @@ export default function NewPayment() {
             <select id="card" value={cardId} onChange={(e) => setCardId(e.target.value)}>
               {cards.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.label} — {c.customer_name}
+                  {safeDisplayText(c.label, '—')} — {safeDisplayText(c.customer_name, '—')}
                 </option>
               ))}
             </select>

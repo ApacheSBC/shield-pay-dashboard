@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import client from '../api/client.js'
+import { safeDisplayText } from '../utils/safeDisplayText.js'
 
 export default function Cards() {
   const [cards, setCards] = useState([])
@@ -48,10 +49,10 @@ export default function Cards() {
           <tbody>
             {cards.map((c) => (
               <tr key={c.id}>
-                <td>{c.label}</td>
-                <td>{c.customer_name}</td>
+                <td>{safeDisplayText(c.label, '—')}</td>
+                <td>{safeDisplayText(c.customer_name, '—')}</td>
                 <td className="mono">{c.last4 || '—'}</td>
-                <td>{c.brand}</td>
+                <td>{safeDisplayText(c.brand, '—')}</td>
                 <td>
                   {c.exp_month}/{c.exp_year}
                 </td>

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import client from '../api/client.js'
+import { safeDisplayText } from '../utils/safeDisplayText.js'
 
 export default function Admin() {
   const { user } = useAuth()
@@ -64,9 +65,9 @@ export default function Admin() {
               {users.map((u) => (
                 <tr key={u.id}>
                   <td>{u.id}</td>
-                  <td>{u.email}</td>
-                  <td>{u.role}</td>
-                  <td>{u.merchant_name || '—'}</td>
+                  <td>{safeDisplayText(u.email, '—')}</td>
+                  <td>{safeDisplayText(u.role, '—')}</td>
+                  <td>{safeDisplayText(u.merchant_name, '—')}</td>
                 </tr>
               ))}
             </tbody>
@@ -88,8 +89,8 @@ export default function Admin() {
               {merchants.map((m) => (
                 <tr key={m.id}>
                   <td>{m.id}</td>
-                  <td>{m.email}</td>
-                  <td>{m.merchant_name}</td>
+                  <td>{safeDisplayText(m.email, '—')}</td>
+                  <td>{safeDisplayText(m.merchant_name, '—')}</td>
                 </tr>
               ))}
             </tbody>

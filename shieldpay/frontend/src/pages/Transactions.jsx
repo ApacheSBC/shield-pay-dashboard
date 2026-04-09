@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import client from '../api/client.js'
+import { safeDisplayText } from '../utils/safeDisplayText.js'
 
 export default function Transactions() {
   const [rows, setRows] = useState([])
@@ -36,9 +37,9 @@ export default function Transactions() {
                 </td>
                 <td>${(t.amount_cents / 100).toFixed(2)}</td>
                 <td>
-                  <span className="pill">{t.status}</span>
+                  <span className="pill">{safeDisplayText(t.status, '—')}</span>
                 </td>
-                <td>{t.customer_name || '—'}</td>
+                <td>{safeDisplayText(t.customer_name, '—')}</td>
                 <td className="mono">{t.last4 || '—'}</td>
               </tr>
             ))}

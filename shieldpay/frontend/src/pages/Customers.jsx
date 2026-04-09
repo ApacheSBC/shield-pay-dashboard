@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import client from '../api/client.js'
+import { safeDisplayText } from '../utils/safeDisplayText.js'
 
 export default function Customers() {
   const [search, setSearch] = useState('')
@@ -46,10 +47,10 @@ export default function Customers() {
             {list.map((c) => (
               <tr key={c.id}>
                 <td>
-                  <Link to={`/customers/${c.id}`}>{c.name}</Link>
+                  <Link to={`/customers/${c.id}`}>{safeDisplayText(c.name, '—')}</Link>
                 </td>
-                <td>{c.email || '—'}</td>
-                <td>{c.phone || '—'}</td>
+                <td>{safeDisplayText(c.email, '—')}</td>
+                <td>{safeDisplayText(c.phone, '—')}</td>
               </tr>
             ))}
           </tbody>
