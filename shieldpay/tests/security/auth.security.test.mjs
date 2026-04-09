@@ -152,3 +152,16 @@ test('webhook registration validates URLs to mitigate SSRF', () => {
   assert.match(settingsFile, /isPrivateOrReservedIpv6/)
   assert.match(settingsFile, /parseIpv4AnyNotation/)
 })
+
+test('database seed requires admin credentials from environment', () => {
+  const dbFile = read('backend/db.js')
+
+  // Seed must read admin credentials from env and fail closed if missing.
+  assert.match(dbFile, /process\.env\.ADMIN_EMAIL/)
+  assert.match(dbFile, /process\.env\.ADMIN_PASSWORD/)
+  assert.match(dbFile, /Initial seed requires ADMIN_EMAIL and ADMIN_PASSWORD in environment/)
+
+  // Prevent regressions to known weak fallback defaults.
+  assert.doesNotMatch(dbFile, /admin@shieldpay\.lab/i)
+  assert.doesNotMatch(dbFile, /ChangeMeAdmin123!/i)
+})
