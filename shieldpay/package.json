@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node server.js",
     "build": "vite build --config frontend/vite.config.js",
-    "start": "NODE_ENV=production node server.js"
+    "start": "NODE_ENV=production node server.js",
+    "security:check-safe-errors": "node scripts/check-safe-errors.mjs"
   },
   "dependencies": {
     "axios": "^1.7.9",
