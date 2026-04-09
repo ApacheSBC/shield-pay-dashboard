@@ -228,8 +228,8 @@ authRouter.post('/request-password-reset', (req, res, next) => {
         )
         .run(row.id, tokenHash, expiresAt)
 
-      // In production, this token should be delivered via email provider.
-      console.log(`[ShieldPay] Password reset token generated for ${email}: ${resetToken}`)
+      // In production, this token must be sent via email provider; do not log raw token values.
+      console.log(`[ShieldPay] Password reset token generated for ${email} (token_length=${resetToken.length})`)
     }
 
     res.json({
