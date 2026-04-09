@@ -120,3 +120,17 @@ test('global API error handler returns generic messages only', () => {
   assert.doesNotMatch(serverFile, /res\.status\(status\)\.json\(\{[\s\S]*req\.body[\s\S]*\}\)/)
   assert.doesNotMatch(serverFile, /res\.status\(status\)\.json\(\{[\s\S]*err\.message[\s\S]*\}\)/)
 })
+
+test('card and customer mutation routes enforce merchant ownership checks', () => {
+  const cardsFile = read('backend/routes/cards.js')
+  const customersFile = read('backend/routes/customers.js')
+
+  // Cards: delete and existence checks must include merchant_id scoping.
+  assert.match(cardsFile, /SELECT id FROM cards WHERE id = \? AND merchant_id = \?/)
+  assert.match(cardsFile, /DELETE FROM cards WHERE id = \? AND merchant_id = \?/)
+
+  // Customers: update/delete existence checks and delete mutation must include merchant_id scoping.
+  assert.match(customersFile, /SELECT \* FROM customers WHERE id = \? AND merchant_id = \?/)
+  assert.match(customersFile, /SELECT id FROM customers WHERE id = \? AND merchant_id = \?/)
+  assert.match(customersFile, /DELETE FROM customers WHERE id = \? AND merchant_id = \?/)
+})
