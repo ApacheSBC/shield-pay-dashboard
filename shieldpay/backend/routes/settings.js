@@ -9,6 +9,8 @@ const PRIVATE_IPV4_RE =
   /^(127\.|10\.|0\.0\.0\.0$|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/
 const PRIVATE_HOST_RE = /^(localhost|localhost\.localdomain|.*\.local)$/i
 const IPV6_LOOPBACK_RE = /^(::1|0:0:0:0:0:0:0:1)$/i
+const MAX_LABEL_LEN = 80
+const MAX_MERCHANT_NAME_LEN = 120
 
 function validateWebhookUrl(input) {
   if (typeof input !== 'string') return null
@@ -34,6 +36,25 @@ function validateWebhookUrl(input) {
   return parsed.toString()
 }
 
+function sanitizeLabel(input, fallback = 'API key') {
+  const text = String(input ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[<>`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!text) return fallback
+  return text.slice(0, MAX_LABEL_LEN)
+}
+
+function sanitizeMerchantName(input) {
+  const text = String(input ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[<>`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return text.slice(0, MAX_MERCHANT_NAME_LEN)
+}
+
 export const settingsRouter = Router()
 settingsRouter.use(requireAuth)
 
@@ -57,8 +78,12 @@ settingsRouter.patch('/profile', async (req, res, next) => {
       return res.status(403).json({ error: 'Merchants only' })
     }
     const { merchantName } = req.body
-    if (merchantName) {
-      getDb().prepare('UPDATE users SET merchant_name = ? WHERE id = ?').run(merchantName, req.user.id)
+    if (typeof merchantName === 'string') {
+      const merchantNameSafe = sanitizeMerchantName(merchantName)
+      if (!merchantNameSafe) {
+        return res.status(400).json({ error: 'merchantName cannot be empty' })
+      }
+      getDb().prepare('UPDATE users SET merchant_name = ? WHERE id = ?').run(merchantNameSafe, req.user.id)
     }
     const row = getDb()
       .prepare('SELECT id, email, merchant_name, role, created_at FROM users WHERE id = ?')
@@ -77,7 +102,12 @@ settingsRouter.get('/api-keys', (req, res, next) => {
     const rows = getDb()
       .prepare('SELECT id, key_prefix, label, created_at FROM merchant_api_keys WHERE merchant_id = ?')
       .all(req.user.id)
-    res.json({ keys: rows })
+    res.json({
+      keys: rows.map((k) => ({
+        ...k,
+        label: sanitizeLabel(k.label),
+      })),
+    })
   } catch (e) {
     next(e)
   }
@@ -89,6 +119,7 @@ settingsRouter.post('/api-keys', async (req, res, next) => {
       return res.status(403).json({ error: 'Merchants only' })
     }
     const { label } = req.body
+    const labelSafe = sanitizeLabel(label)
     const randomPart = crypto.randomBytes(24).toString('base64url')
     const raw = `sk_${req.user.id}_${randomPart}`
     const key_hash = await bcrypt.hash(raw, 8)
@@ -96,7 +127,7 @@ settingsRouter.post('/api-keys', async (req, res, next) => {
       .prepare(
         `INSERT INTO merchant_api_keys (merchant_id, key_prefix, key_hash, label) VALUES (?, ?, ?, ?)`,
       )
-      .run(req.user.id, raw.slice(0, 12), key_hash, label || 'API key')
+      .run(req.user.id, raw.slice(0, 12), key_hash, labelSafe)
     res.status(201).json({ id: r.lastInsertRowid, secret: raw, message: 'Store this secret once' })
   } catch (e) {
     next(e)
