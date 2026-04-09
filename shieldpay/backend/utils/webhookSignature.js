@@ -20,6 +20,28 @@ function parseSignatureHeader(value) {
   return /^[a-fA-F0-9]{64}$/.test(normalized) ? normalized.toLowerCase() : null
 }
 
+function safeEqualString(a, b) {
+  const aa = Buffer.from(String(a), 'utf8')
+  const bb = Buffer.from(String(b), 'utf8')
+  if (aa.length !== bb.length) return false
+  return crypto.timingSafeEqual(aa, bb)
+}
+
+export function verifyInboundWebhookAuthToken(authHeaderValue) {
+  const configured = String(process.env.INBOUND_WEBHOOK_AUTH_TOKEN || '').trim()
+  if (!configured || configured.length < 24) {
+    throw new Error('INBOUND_WEBHOOK_AUTH_TOKEN is required and must be at least 24 characters')
+  }
+
+  const raw = String(authHeaderValue || '').trim()
+  const provided = raw.startsWith('Bearer ') ? raw.slice(7).trim() : raw
+  if (!provided) return { ok: false, reason: 'missing_auth_token' }
+
+  return safeEqualString(provided, configured)
+    ? { ok: true }
+    : { ok: false, reason: 'auth_token_mismatch' }
+}
+
 export function verifyInboundWebhookSignature({ rawBody, timestampHeader, signatureHeader }) {
   const ts = Number.parseInt(String(timestampHeader || ''), 10)
   if (!Number.isFinite(ts)) return { ok: false, reason: 'invalid_timestamp' }

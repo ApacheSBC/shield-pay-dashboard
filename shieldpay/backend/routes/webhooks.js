@@ -1,9 +1,14 @@
 import { Router } from 'express'
-import { verifyInboundWebhookSignature } from '../utils/webhookSignature.js'
+import { verifyInboundWebhookAuthToken, verifyInboundWebhookSignature } from '../utils/webhookSignature.js'
 
 export const webhooksRouter = Router()
 
 webhooksRouter.post('/incoming', (req, res) => {
+  const auth = verifyInboundWebhookAuthToken(req.headers.authorization || req.headers['x-webhook-auth'])
+  if (!auth.ok) {
+    return res.status(401).json({ error: 'Unauthorized webhook request' })
+  }
+
   const rawBody = Buffer.isBuffer(req.body) ? req.body : null
   if (!rawBody) {
     return res.status(400).json({ error: 'Raw JSON body required' })
