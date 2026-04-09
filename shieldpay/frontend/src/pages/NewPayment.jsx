@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import client from '../api/client.js'
+import { safeErrorMessage } from '../utils/safeErrorMessage.js'
 
 export default function NewPayment() {
   const [cards, setCards] = useState([])
@@ -29,7 +30,7 @@ export default function NewPayment() {
       })
       setResult(data)
     } catch (ex) {
-      setErr(ex.response?.data?.error || 'Payment failed')
+      setErr(safeErrorMessage(ex.response?.data?.error, 'Payment failed'))
     }
   }
 

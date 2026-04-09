@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { safeErrorMessage } from '../utils/safeErrorMessage.js'
 
 export default function Register() {
   const { register, isAuthenticated } = useAuth()
@@ -21,7 +22,7 @@ export default function Register() {
       await register({ email, password, merchantName })
       nav('/', { replace: true })
     } catch (ex) {
-      setErr(ex.response?.data?.error || 'Registration failed')
+      setErr(safeErrorMessage(ex.response?.data?.error, 'Registration failed'))
     }
   }
 
