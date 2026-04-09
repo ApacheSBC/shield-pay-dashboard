@@ -137,3 +137,18 @@ test('card and customer mutation routes enforce merchant ownership checks', () =
   assert.match(customersFile, /SELECT id FROM customers WHERE id = \? AND merchant_id = \?/)
   assert.match(customersFile, /DELETE FROM customers WHERE id = \? AND merchant_id = \?/)
 })
+
+test('webhook registration validates URLs to mitigate SSRF', () => {
+  const settingsFile = read('backend/routes/settings.js')
+
+  // Endpoint must validate incoming URL and reject unsafe targets.
+  assert.match(settingsFile, /settingsRouter\.post\('\/webhooks'/)
+  assert.match(settingsFile, /const safeUrl = validateWebhookUrl\(url\)/)
+  assert.match(settingsFile, /Invalid webhook URL\. Use public http\(s\) endpoint only\./)
+
+  // Validation must block local/private targets across hostnames, IPv4, IPv6, and exotic IPv4 notation.
+  assert.match(settingsFile, /PRIVATE_HOST_RE/)
+  assert.match(settingsFile, /isPrivateOrReservedIpv4/)
+  assert.match(settingsFile, /isPrivateOrReservedIpv6/)
+  assert.match(settingsFile, /parseIpv4AnyNotation/)
+})
