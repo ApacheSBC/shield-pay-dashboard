@@ -10,6 +10,9 @@ export default function Settings() {
   const [hookUrl, setHookUrl] = useState('https://example.com/hook')
   const [exportJson, setExportJson] = useState('')
   const [msg, setMsg] = useState('')
+  const [ephemeralSecret, setEphemeralSecret] = useState('')
+  const [secretVisibleUntil, setSecretVisibleUntil] = useState(0)
+  const [secretNowMs, setSecretNowMs] = useState(0)
 
   const load = () => {
     client.get('/settings/profile').then((r) => {
@@ -36,10 +39,27 @@ export default function Settings() {
     e.preventDefault()
     setMsg('')
     const { data } = await client.post('/settings/api-keys', { label: newKeyLabel })
-    setMsg(`New key (copy now): ${data.secret}`)
+    setEphemeralSecret(data.secret)
+    setSecretVisibleUntil(Date.now() + 30000)
     setNewKeyLabel('')
     load()
   }
+
+  useEffect(() => {
+    if (!ephemeralSecret) return
+    setSecretNowMs(Date.now())
+    const timeout = setTimeout(() => {
+      setEphemeralSecret('')
+      setSecretVisibleUntil(0)
+    }, 30000)
+    const interval = setInterval(() => {
+      setSecretNowMs(Date.now())
+    }, 1000)
+    return () => {
+      clearTimeout(timeout)
+      clearInterval(interval)
+    }
+  }, [ephemeralSecret])
 
   const addHook = async (e) => {
     e.preventDefault()
@@ -124,6 +144,64 @@ export default function Settings() {
       </div>
 
       {msg && <p className="pill" style={{ display: 'inline-block', marginTop: '0.5rem' }}>{msg}</p>}
+      {ephemeralSecret && (
+        <div
+          className="card"
+          role="dialog"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            right: '1rem',
+            bottom: '1rem',
+            maxWidth: '520px',
+            zIndex: 1000,
+            borderColor: 'var(--accent)',
+          }}
+        >
+          <h2 style={{ marginBottom: '0.5rem' }}>New API key (one-time reveal)</h2>
+          <p style={{ color: 'var(--muted)' }}>
+            Copy this key now. It auto-clears in {Math.max(1, Math.ceil((secretVisibleUntil - secretNowMs) / 1000))}s.
+          </p>
+          <div
+            className="mono"
+            style={{
+              margin: '0.5rem 0',
+              padding: '0.65rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border)',
+              background: 'var(--bg)',
+            }}
+          >
+            {ephemeralSecret}
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(ephemeralSecret)
+                  setMsg('API key copied to clipboard')
+                } catch {
+                  setMsg('Copy failed. Copy manually before it clears.')
+                }
+              }}
+            >
+              Copy
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                setEphemeralSecret('')
+                setSecretVisibleUntil(0)
+              }}
+            >
+              Clear now
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
