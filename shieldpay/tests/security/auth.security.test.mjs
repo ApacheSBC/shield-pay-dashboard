@@ -178,3 +178,12 @@ test('API key labels are sanitized in backend and safely rendered in frontend', 
   // Frontend renders labels via safe display helper.
   assert.match(settingsPageFile, /safeDisplayText\(k\.label\)/)
 })
+
+test('payment processing validates optional customer ownership for merchant', () => {
+  const paymentsFile = read('backend/routes/payments.js')
+
+  // Customer ownership check must exist when customerId is provided.
+  assert.match(paymentsFile, /if \(customerId != null && customerId !== ''\)/)
+  assert.match(paymentsFile, /SELECT id FROM customers WHERE id = \? AND merchant_id = \?/)
+  assert.match(paymentsFile, /Invalid customer/)
+})
