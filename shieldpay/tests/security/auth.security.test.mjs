@@ -61,3 +61,18 @@ test('request logger redacts and sanitizes request bodies before logging', () =>
   // Ensure output is passed through centralized sanitizer before console output.
   assert.match(requestLoggerFile, /sanitizeText\(JSON\.stringify\(redacted\)\)/)
 })
+
+test('settings page keeps API secret in ephemeral reveal flow, not message banner', () => {
+  const settingsFile = read('frontend/src/pages/Settings.jsx')
+
+  // Dedicated ephemeral secret state exists.
+  assert.match(settingsFile, /const \[ephemeralSecret,\s*setEphemeralSecret\] = useState\(''\)/)
+  assert.match(settingsFile, /setEphemeralSecret\(data\.secret\)/)
+
+  // Secret reveal is auto-cleared and can be manually cleared.
+  assert.match(settingsFile, /setTimeout\(\(\) => \{\s*setEphemeralSecret\(''\)/)
+  assert.match(settingsFile, /onClick=\{\(\) => \{\s*setEphemeralSecret\(''\)/)
+
+  // Prevent future regressions where secret is copied into general message UI state.
+  assert.doesNotMatch(settingsFile, /setMsg\(\s*data\.secret\s*\)/)
+})
