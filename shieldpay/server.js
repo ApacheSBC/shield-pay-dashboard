@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url'
 import { initDb } from './backend/db.js'
 import { apiRouter } from './backend/routes/index.js'
 import { requestBodyLogger } from './backend/middleware/requestLogger.js'
-import { sanitizeClientErrorMessage, sanitizeErrorForLog } from './backend/utils/logSanitizer.js'
+import { sanitizeErrorForLog } from './backend/utils/logSanitizer.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT) || 8788
@@ -179,8 +179,16 @@ if (isProd) {
 app.use((err, req, res, next) => {
   console.error('[ShieldPay API error]', sanitizeErrorForLog(err))
   const status = Number.isInteger(err?.status) ? err.status : 500
-  const message =
-    status >= 500 ? 'Internal server error' : sanitizeClientErrorMessage(err?.message, 'Request failed')
+  const messageByStatus = {
+    400: 'Bad request',
+    401: 'Unauthorized',
+    403: 'Forbidden',
+    404: 'Not found',
+    409: 'Conflict',
+    422: 'Unprocessable request',
+    429: 'Too many requests',
+  }
+  const message = status >= 500 ? 'Internal server error' : messageByStatus[status] || 'Request failed'
   res.status(status).json({ error: message })
 })
 

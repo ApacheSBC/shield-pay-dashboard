@@ -75,8 +75,8 @@ cardsRouter.post('/', validateRequest({ body: cardCreateBodySchema }), (req, res
       expY = validateExpYear(expYear)
       labelSafe = sanitizeCardLabel(label)
       brandSafe = sanitizeBrand(brand)
-    } catch (err) {
-      return res.status(400).json({ error: err.message })
+    } catch {
+      return res.status(400).json({ error: 'Invalid card input' })
     }
     const cust = getDb()
       .prepare('SELECT id FROM customers WHERE id = ? AND merchant_id = ?')
