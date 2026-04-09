@@ -2,6 +2,7 @@ import 'dotenv/config'
 import http from 'http'
 import express from 'express'
 import session from 'express-session'
+import helmet from 'helmet'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -46,6 +47,12 @@ try {
 }
 
 const app = express()
+const connectSrc = new Set(["'self'"])
+if (!isProd) {
+  connectSrc.add('ws:')
+  connectSrc.add('wss:')
+  for (const origin of corsAllowedOrigins) connectSrc.add(origin)
+}
 
 function normalizeOrigin(input) {
   try {
@@ -85,6 +92,36 @@ app.use((req, res, next) => {
   }
   next()
 })
+
+app.use(
+  helmet({
+    frameguard: { action: 'deny' }, // X-Frame-Options: DENY
+    noSniff: true, // X-Content-Type-Options: nosniff
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+        scriptSrc: isProd ? ["'self'"] : ["'self'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: Array.from(connectSrc),
+      },
+    },
+    permissionsPolicy: {
+      features: {
+        camera: [],
+        microphone: [],
+        geolocation: [],
+        payment: [],
+      },
+    },
+  }),
+)
 
 app.use(
   session({
