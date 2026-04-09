@@ -76,3 +76,20 @@ test('settings page keeps API secret in ephemeral reveal flow, not message banne
   // Prevent future regressions where secret is copied into general message UI state.
   assert.doesNotMatch(settingsFile, /setMsg\(\s*data\.secret\s*\)/)
 })
+
+test('password reset request endpoint stays enumeration-safe', () => {
+  const authFile = read('backend/routes/auth.js')
+
+  // Ensure reset-request flow exists with a generic success message.
+  assert.match(authFile, /authRouter\.post\(\s*'\/request-password-reset'/)
+  assert.match(authFile, /If the account exists, a password reset link has been sent\./)
+
+  // Ensure non-existent users do not trigger explicit 404/not-found responses in this flow.
+  const requestResetSection = authFile.match(
+    /authRouter\.post\(\s*'\/request-password-reset'[\s\S]*?\n\)\n\nauthRouter\.post\(\s*'\/reset-password'/,
+  )
+  assert.ok(requestResetSection, 'request-password-reset section should be present')
+  const sectionText = requestResetSection[0]
+  assert.doesNotMatch(sectionText, /status\(404\)/)
+  assert.doesNotMatch(sectionText, /not found/i)
+})
