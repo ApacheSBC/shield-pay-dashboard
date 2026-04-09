@@ -41,10 +41,7 @@ function ipv4ToInt(ip) {
   return out >>> 0
 }
 
-function isPrivateOrReservedIpv4(ip) {
-  const value = ipv4ToInt(ip)
-  if (value == null) return false
-
+function isPrivateOrReservedIpv4Int(value) {
   const inRange = (base, maskBits) => {
     const shift = 32 - maskBits
     return (value >>> shift) === (base >>> shift)
@@ -61,6 +58,52 @@ function isPrivateOrReservedIpv4(ip) {
     inRange(0xc6120000, 15) || // 198.18.0.0/15 (benchmarking)
     inRange(0xe0000000, 4) // 224.0.0.0/4 (multicast + reserved)
   )
+}
+
+function isPrivateOrReservedIpv4(ip) {
+  const value = ipv4ToInt(ip)
+  if (value == null) return false
+  return isPrivateOrReservedIpv4Int(value)
+}
+
+function parseIpv4PartAutoBase(part) {
+  const p = String(part || '').trim().toLowerCase()
+  if (!p) return null
+  if (/^0x[0-9a-f]+$/.test(p)) return Number.parseInt(p.slice(2), 16)
+  if (/^0[0-7]+$/.test(p) && p.length > 1) return Number.parseInt(p.slice(1), 8)
+  if (/^\d+$/.test(p)) return Number.parseInt(p, 10)
+  return null
+}
+
+/**
+ * Parse legacy/non-canonical IPv4 textual formats accepted by some HTTP stacks:
+ * - single integer (e.g. 2130706433, 0x7f000001, 017700000001)
+ * - dotted parts with auto-base (e.g. 127.1, 0x7f.1, 0177.0.0.1)
+ * Returns uint32 or null if invalid.
+ */
+function parseIpv4AnyNotation(host) {
+  const parts = String(host || '').split('.')
+  if (parts.length < 1 || parts.length > 4) return null
+
+  const parsed = parts.map((p) => parseIpv4PartAutoBase(p))
+  if (parsed.some((n) => n == null || !Number.isFinite(n) || n < 0)) return null
+
+  let value = 0
+  if (parsed.length === 1) {
+    if (parsed[0] > 0xffffffff) return null
+    value = parsed[0]
+  } else if (parsed.length === 2) {
+    if (parsed[0] > 255 || parsed[1] > 0xffffff) return null
+    value = (parsed[0] << 24) | parsed[1]
+  } else if (parsed.length === 3) {
+    if (parsed[0] > 255 || parsed[1] > 255 || parsed[2] > 0xffff) return null
+    value = (parsed[0] << 24) | (parsed[1] << 16) | parsed[2]
+  } else {
+    if (parsed.some((n) => n > 255)) return null
+    value = (parsed[0] << 24) | (parsed[1] << 16) | (parsed[2] << 8) | parsed[3]
+  }
+
+  return value >>> 0
 }
 
 function parseIpv6ToBigInt(ipv6Input) {
@@ -154,6 +197,10 @@ function validateWebhookUrl(input) {
   const ipVersion = net.isIP(hostname)
   if (ipVersion === 4 && isPrivateOrReservedIpv4(hostname)) return null
   if (ipVersion === 6 && isPrivateOrReservedIpv6(hostname)) return null
+  if (ipVersion === 0) {
+    const exoticV4 = parseIpv4AnyNotation(hostname)
+    if (exoticV4 != null && isPrivateOrReservedIpv4Int(exoticV4)) return null
+  }
 
   // Keep webhook targets focused on origin paths; fragments are unnecessary.
   parsed.hash = ''
