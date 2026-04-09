@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..', '..')
@@ -242,4 +242,20 @@ test('webhook auth helper returns object contract consumed by callers', () => {
   assert.match(webhookRouteFile, /const auth = verifyInboundWebhookAuthToken\(/)
   assert.match(webhookRouteFile, /if \(!auth\.ok\)/)
   assert.match(webhookRouteFile, /Unauthorized webhook request/)
+})
+
+test('log sanitizer masks sensitive values in log text', async () => {
+  const mod = await import(pathToFileURL(path.join(projectRoot, 'backend/utils/logSanitizer.js')).href)
+  const { sanitizeText } = mod
+
+  const raw =
+    'password=Secret123 bearer Bearer abcdefghijklmnopqrstuvwxyz123456 email john.doe@example.com ' +
+    'card 4111111111111111 cvv=123 token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature'
+  const out = sanitizeText(raw)
+
+  assert.doesNotMatch(out, /Secret123/)
+  assert.doesNotMatch(out, /john\.doe@example\.com/i)
+  assert.doesNotMatch(out, /4111111111111111/)
+  assert.doesNotMatch(out, /eyJhbGci/i)
+  assert.match(out, /\[REDACTED\]|\*\*\*EMAIL\*\*\*|\*\*\*CARD\*\*\*|\*\*\*CVV\*\*\*/)
 })
