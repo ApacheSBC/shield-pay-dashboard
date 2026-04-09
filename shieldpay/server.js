@@ -87,14 +87,11 @@ if (isProd) {
   app.use(vite.middlewares)
 }
 
-// ARKO-LAB-06: expose stack traces (and body) to API clients in all environments — never do this in production.
 app.use((err, req, res, next) => {
   console.error(err)
-  res.status(err.status || 500).json({
-    error: err.message || 'Server error',
-    stack: err.stack,
-    body: req.body,
-  })
+  const status = Number.isInteger(err?.status) ? err.status : 500
+  const message = status >= 500 ? 'Internal server error' : err?.message || 'Request failed'
+  res.status(status).json({ error: message })
 })
 
 server.on('error', (err) => {
