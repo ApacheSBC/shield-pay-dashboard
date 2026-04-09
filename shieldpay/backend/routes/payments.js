@@ -24,7 +24,16 @@ paymentsRouter.post('/process', (req, res, next) => {
     if (!Number.isFinite(amount_cents) || amount_cents <= 0) {
       return res.status(400).json({ error: 'Invalid amount' })
     }
-    const custId = customerId || card.customer_id
+    let custId = card.customer_id
+    if (customerId != null && customerId !== '') {
+      const customerRow = getDb()
+        .prepare('SELECT id FROM customers WHERE id = ? AND merchant_id = ?')
+        .get(customerId, req.user.id)
+      if (!customerRow) {
+        return res.status(400).json({ error: 'Invalid customer' })
+      }
+      custId = customerRow.id
+    }
     const panSnap = encryptField(card.pan_plain)
     const r = getDb()
       .prepare(
