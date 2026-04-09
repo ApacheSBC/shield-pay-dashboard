@@ -93,3 +93,15 @@ test('password reset request endpoint stays enumeration-safe', () => {
   assert.doesNotMatch(sectionText, /status\(404\)/)
   assert.doesNotMatch(sectionText, /not found/i)
 })
+
+test('frontend auth avoids localStorage token persistence and uses cookies', () => {
+  const authContextFile = read('frontend/src/context/AuthContext.jsx')
+  const apiClientFile = read('frontend/src/api/client.js')
+
+  // Auth context should not persist JWT/user data in browser storage.
+  assert.doesNotMatch(authContextFile, /localStorage|sessionStorage|getItem\(|setItem\(|removeItem\(/)
+
+  // API client should rely on cookie-based auth for session/JWT transport.
+  assert.match(apiClientFile, /withCredentials:\s*true/)
+  assert.doesNotMatch(apiClientFile, /Authorization/)
+})
