@@ -12,6 +12,19 @@ import { requestBodyLogger } from './backend/middleware/requestLogger.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT) || 8788
 const isProd = process.env.NODE_ENV === 'production'
+const MIN_SESSION_SECRET_LEN = 24
+const sessionSecret = (process.env.SESSION_SECRET || '').trim()
+
+if (!sessionSecret) {
+  console.error(
+    'SESSION_SECRET is required. Set a strong random value in .env before starting the server.',
+  )
+  process.exit(1)
+}
+if (sessionSecret.length < MIN_SESSION_SECRET_LEN) {
+  console.error(`SESSION_SECRET must be at least ${MIN_SESSION_SECRET_LEN} characters long.`)
+  process.exit(1)
+}
 
 try {
   await initDb()
@@ -25,7 +38,7 @@ const app = express()
 
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'shieldpay-session-weak',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: { httpOnly: true, maxAge: 86400000 },
