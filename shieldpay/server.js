@@ -1,0 +1,95 @@
+import 'dotenv/config'
+import http from 'http'
+import express from 'express'
+import session from 'express-session'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import { initDb } from './backend/db.js'
+import { apiRouter } from './backend/routes/index.js'
+import { requestBodyLogger } from './backend/middleware/requestLogger.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const PORT = Number(process.env.PORT) || 8788
+const isProd = process.env.NODE_ENV === 'production'
+
+try {
+  await initDb()
+} catch (err) {
+  console.error('[ShieldPay] Database init failed (is better-sqlite3 built for your Node version?)')
+  console.error(err)
+  process.exit(1)
+}
+
+const app = express()
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'shieldpay-session-weak',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { httpOnly: true, maxAge: 86400000 },
+  }),
+)
+
+app.use(express.json())
+
+// ARKO-LAB-05: log full request bodies (passwords, card fields) in development — unsafe pattern.
+if (!isProd) {
+  app.use(requestBodyLogger)
+}
+
+app.use('/api', apiRouter)
+
+const server = http.createServer(app)
+
+if (isProd) {
+  const dist = path.join(__dirname, 'frontend', 'dist')
+  if (!fs.existsSync(dist)) {
+    console.error(
+      '[ShieldPay] Production build missing. Run `npm run build` to create frontend/dist, then `npm start`.',
+    )
+    process.exit(1)
+  }
+  app.use(express.static(dist))
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next()
+    res.sendFile(path.join(dist, 'index.html'))
+  })
+} else {
+  const { createServer: createViteServer } = await import('vite')
+  const vite = await createViteServer({
+    root: path.join(__dirname, 'frontend'),
+    server: {
+      middlewareMode: true,
+      hmr: { server },
+    },
+    appType: 'spa',
+  })
+  app.use(vite.middlewares)
+}
+
+// ARKO-LAB-06: expose stack traces (and body) to API clients in all environments — never do this in production.
+app.use((err, req, res, next) => {
+  console.error(err)
+  res.status(err.status || 500).json({
+    error: err.message || 'Server error',
+    stack: err.stack,
+    body: req.body,
+  })
+})
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `[ShieldPay] Port ${PORT} is already in use. Set a free port in .env, e.g. PORT=8792, then run again.`,
+    )
+  } else {
+    console.error(err)
+  }
+  process.exit(1)
+})
+
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`ShieldPay listening at http://127.0.0.1:${PORT}`)
+})
