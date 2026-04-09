@@ -5,6 +5,35 @@ import { getDb } from '../db.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { cardRowToApiMasked, transactionRowToApiMasked } from '../crypto/cardFieldCrypto.js'
 
+const PRIVATE_IPV4_RE =
+  /^(127\.|10\.|0\.0\.0\.0$|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/
+const PRIVATE_HOST_RE = /^(localhost|localhost\.localdomain|.*\.local)$/i
+const IPV6_LOOPBACK_RE = /^(::1|0:0:0:0:0:0:0:1)$/i
+
+function validateWebhookUrl(input) {
+  if (typeof input !== 'string') return null
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  let parsed
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return null
+  }
+
+  if (!['https:', 'http:'].includes(parsed.protocol)) return null
+  if (!parsed.hostname) return null
+  if (parsed.username || parsed.password) return null
+  if (PRIVATE_HOST_RE.test(parsed.hostname)) return null
+  if (PRIVATE_IPV4_RE.test(parsed.hostname)) return null
+  if (IPV6_LOOPBACK_RE.test(parsed.hostname)) return null
+  if (parsed.hostname.includes(':') && parsed.hostname.toLowerCase().startsWith('fe80')) return null
+
+  // Keep webhook targets focused on origin paths; fragments are unnecessary.
+  parsed.hash = ''
+  return parsed.toString()
+}
+
 export const settingsRouter = Router()
 settingsRouter.use(requireAuth)
 
@@ -119,9 +148,13 @@ settingsRouter.post('/webhooks', (req, res, next) => {
     }
     const { url, secret } = req.body
     if (!url) return res.status(400).json({ error: 'url required' })
+    const safeUrl = validateWebhookUrl(url)
+    if (!safeUrl) {
+      return res.status(400).json({ error: 'Invalid webhook URL. Use public http(s) endpoint only.' })
+    }
     const r = getDb()
       .prepare(`INSERT INTO webhooks (merchant_id, url, secret, active) VALUES (?, ?, ?, 1)`)
-      .run(req.user.id, url, secret || '')
+      .run(req.user.id, safeUrl, secret || '')
     const row = getDb().prepare('SELECT * FROM webhooks WHERE id = ?').get(r.lastInsertRowid)
     res.status(201).json({ webhook: row })
   } catch (e) {
