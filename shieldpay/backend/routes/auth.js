@@ -4,8 +4,10 @@ import crypto from 'crypto'
 import { getDb } from '../db.js'
 import { signToken } from '../auth/jwt.js'
 import { requireAuth } from '../middleware/requireAuth.js'
+import { buildAuthProtection } from '../middleware/authRateLimit.js'
 
 export const authRouter = Router()
+const authProtection = await buildAuthProtection()
 const PASSWORD_RESET_TTL_MINUTES = 15
 const MIN_PASSWORD_LEN = 12
 const IMPERSONATE_WINDOW_MS = 10 * 60 * 1000
@@ -102,7 +104,7 @@ function logImpersonationEvent({ adminUserId, adminEmail, targetUserId, targetEm
   }
 }
 
-authRouter.post('/register', async (req, res, next) => {
+authRouter.post('/register', ...authProtection.register, async (req, res, next) => {
   try {
     const { password, merchantName } = req.body
     const email = normalizeEmail(req.body.email)
@@ -153,7 +155,7 @@ authRouter.post('/register', async (req, res, next) => {
   }
 })
 
-authRouter.post('/login', async (req, res, next) => {
+authRouter.post('/login', ...authProtection.login, async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email)
     const { password } = req.body
@@ -203,7 +205,7 @@ authRouter.post('/logout', (req, res) => {
 })
 
 // Request a password reset; response is always generic to avoid account enumeration.
-authRouter.post('/request-password-reset', (req, res, next) => {
+authRouter.post('/request-password-reset', ...authProtection.passwordResetRequest, (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email)
     if (!email || !isValidEmail(email)) {
@@ -240,7 +242,7 @@ authRouter.post('/request-password-reset', (req, res, next) => {
   }
 })
 
-authRouter.post('/reset-password', async (req, res, next) => {
+authRouter.post('/reset-password', ...authProtection.passwordResetConfirm, async (req, res, next) => {
   try {
     const { token, newPassword } = req.body
     if (!token || !newPassword) {
@@ -276,7 +278,7 @@ authRouter.post('/reset-password', async (req, res, next) => {
   }
 })
 
-authRouter.post('/impersonate', requireAuth, (req, res, next) => {
+authRouter.post('/impersonate', requireAuth, ...authProtection.impersonate, (req, res, next) => {
   try {
     const { targetEmail, adminPassword, mfaCode, adminEmail } = req.body
     const targetEmailNorm = normalizeEmail(targetEmail)
