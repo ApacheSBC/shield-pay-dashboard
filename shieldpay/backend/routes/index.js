@@ -8,6 +8,7 @@ import { paymentsRouter } from './payments.js'
 import { adminRouter } from './admin.js'
 import { settingsRouter } from './settings.js'
 import { statsRouter } from './stats.js'
+import { webhooksRouter } from './webhooks.js'
 
 export const apiRouter = Router()
 
@@ -20,6 +21,7 @@ apiRouter.use('/payments', paymentsRouter)
 apiRouter.use('/admin', adminRouter)
 apiRouter.use('/settings', settingsRouter)
 apiRouter.use('/stats', statsRouter)
+apiRouter.use('/webhooks', webhooksRouter)
 
 apiRouter.use((req, res) => {
   res.status(404).json({ error: 'Not found' })

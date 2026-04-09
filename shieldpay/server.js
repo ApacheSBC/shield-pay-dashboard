@@ -100,6 +100,8 @@ app.use(
   }),
 )
 
+// Inbound webhooks require raw body for HMAC signature verification.
+app.use('/api/webhooks/incoming', express.raw({ type: 'application/json', limit: '256kb' }))
 app.use(express.json())
 
 // ARKO-LAB-05: log full request bodies (passwords, card fields) in development — unsafe pattern.
