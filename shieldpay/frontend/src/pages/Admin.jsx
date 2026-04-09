@@ -22,7 +22,7 @@ export default function Admin() {
         setMerchants(m.data.merchants)
         setSummary(s.data)
       })
-      .catch(() => setErr('Admin API failed (or token not admin — lab: non-admin JWT may still work server-side)'))
+      .catch(() => setErr('Admin access denied or unavailable.'))
   }, [user])
 
   if (user?.role !== 'admin') {
@@ -33,7 +33,7 @@ export default function Admin() {
     <>
       <h1>Admin</h1>
       <p style={{ color: 'var(--muted)', maxWidth: '720px' }}>
-        UI is limited to admin role; the insecure baseline API may still expose admin routes to any JWT (ARKO-LAB-03).
+        Admin data is protected by server-side role-based authorization.
       </p>
       {err && <p className="error-msg">{err}</p>}
       {summary && (
