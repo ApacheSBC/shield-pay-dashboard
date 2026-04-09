@@ -81,36 +81,42 @@ customersRouter.get('/:id', (req, res, next) => {
   }
 })
 
-// ARKO-LAB-02: updates customer by id only — does not verify JWT merchant_id matches row.merchant_id.
+// Enforce ownership: merchant can only update customers they own.
 customersRouter.put('/:id', (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
     }
     const { name, email, phone, notes } = req.body
-    const existing = getDb().prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id)
+    const existing = getDb()
+      .prepare('SELECT * FROM customers WHERE id = ? AND merchant_id = ?')
+      .get(req.params.id, req.user.id)
     if (!existing) return res.status(404).json({ error: 'Not found' })
     getDb()
       .prepare(
         `UPDATE customers SET name = COALESCE(?, name), email = COALESCE(?, email), phone = COALESCE(?, phone), notes = COALESCE(?, notes) WHERE id = ?`,
       )
       .run(name ?? existing.name, email ?? existing.email, phone ?? existing.phone, notes ?? existing.notes, req.params.id)
-    const row = getDb().prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id)
+    const row = getDb()
+      .prepare('SELECT * FROM customers WHERE id = ? AND merchant_id = ?')
+      .get(req.params.id, req.user.id)
     res.json({ customer: row })
   } catch (e) {
     next(e)
   }
 })
 
-// ARKO-LAB-02: delete by id without ownership check against JWT merchant.
+// Enforce ownership: merchant can only delete customers they own.
 customersRouter.delete('/:id', (req, res, next) => {
   try {
     if (req.user.role !== 'merchant') {
       return res.status(403).json({ error: 'Merchants only' })
     }
-    const existing = getDb().prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id)
+    const existing = getDb()
+      .prepare('SELECT id FROM customers WHERE id = ? AND merchant_id = ?')
+      .get(req.params.id, req.user.id)
     if (!existing) return res.status(404).json({ error: 'Not found' })
-    getDb().prepare('DELETE FROM customers WHERE id = ?').run(req.params.id)
+    getDb().prepare('DELETE FROM customers WHERE id = ? AND merchant_id = ?').run(req.params.id, req.user.id)
     res.json({ ok: true })
   } catch (e) {
     next(e)
